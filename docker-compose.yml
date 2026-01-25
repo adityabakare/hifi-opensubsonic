@@ -1,0 +1,8 @@
+services:
+  hifi-opensubsonic:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./instances.json:/app/instances.json
+    restart: unless-stopped
