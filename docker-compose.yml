@@ -13,6 +13,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - hifi-net
 
   hifi:
     container_name: hifi
@@ -27,6 +29,12 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-subsonic}:${POSTGRES_PASSWORD:-subsonic}@db:5432/${POSTGRES_DB:-subsonic}
     volumes:
       - ./instances.json:/app/instances.json
+    networks:
+      - hifi-net
 
 volumes:
   db_data:
+
+networks:
+  hifi-net:
+    driver: bridge
