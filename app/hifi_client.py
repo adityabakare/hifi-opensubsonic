@@ -3,13 +3,16 @@ from typing import Optional, Dict, Any, List
 import json
 import random
 import os
+import logging
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 class HifiClient:
     def __init__(self):
         self.instances = []
         self._load_instances()
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.client = httpx.AsyncClient(timeout=60.0)
 
     def _load_instances(self):
         """Load upstream instances from JSON or config."""
@@ -23,9 +26,9 @@ class HifiClient:
             try:
                 with open(path, "r") as f:
                     self.instances = json.load(f)
-                print(f"Loaded {len(self.instances)} instances.")
+                logger.info(f"Loaded {len(self.instances)} upstream instances.")
             except Exception as e:
-                print(f"Failed to load instances.json: {e}")
+                logger.error(f"Failed to load instances.json: {e}")
         
         # Fallback to default if empty
         if not self.instances:
@@ -61,7 +64,7 @@ class HifiClient:
                 last_error = e
                 continue
         
-        print(f"All instances failed. Last error: {last_error}")
+        logger.warning(f"All upstream instances failed. Last error: {last_error}")
         raise last_error if last_error else Exception("No instances available")
 
     # --- Search ---
@@ -89,8 +92,19 @@ class HifiClient:
     async def get_album(self, album_id: int):
         return await self._get("/album/", params={"id": album_id})
 
+    async def get_similar_artists(self, artist_id: int):
+        return await self._get("/artist/similar/", params={"id": artist_id})
+
     async def get_track(self, track_id: int, quality: str = "LOSSLESS"):
+        """Get track streaming info (manifest/url). For metadata use get_track_info()."""
         return await self._get("/track/", params={"id": track_id, "quality": quality})
+
+    async def get_track_info(self, track_id: int):
+        """
+        Get full track metadata (title, artist, album, duration, cover).
+        Uses /info/ endpoint which returns complete track information.
+        """
+        return await self._get("/info/", params={"id": track_id})
 
     async def get_stream_url(self, track_id: int) -> Optional[str]:
         return await self.get_track(track_id)

@@ -8,6 +8,10 @@ dependencies = [
     "fastapi>=0.128.0",
     "httpx>=0.28.1",
     "pydantic-settings>=2.12.0",
+    "sqlmodel",
+    "asyncpg",
+    "passlib[bcrypt]", 
+    "bcrypt==3.2.2", # Pin for passlib compatibility
     "uvicorn>=0.40.0",
     "xmltodict>=1.0.2",
 ]

@@ -1,0 +1,459 @@
+"""
+Browsing endpoints for navigating the music library.
+"""
+from fastapi import APIRouter, Depends, Request
+import asyncio
+
+from app.config import settings
+from app.hifi_client import hifi_client
+from app.responses import SubsonicResponse
+from app.routers.common import common_params, get_track_format
+
+router = APIRouter()
+
+
+@router.get("/rest/getMusicFolders.view")
+@router.get("/rest/getMusicFolders")
+async def get_music_folders(commons: dict = Depends(common_params)):
+    return SubsonicResponse.create({
+        "status": "ok",
+        "version": settings.API_VERSION,
+        "musicFolders": {
+            "musicFolder": [
+                {"id": 1, "name": "Tidal"}
+            ]
+        }
+    }, fmt=commons["f"])
+
+
+@router.get("/rest/getMusicDirectory.view")
+@router.get("/rest/getMusicDirectory")
+async def get_music_directory(
+    id: str,
+    commons: dict = Depends(common_params)
+):
+    """
+    Returns contents of a directory.
+    """
+    f = commons["f"]
+    
+    # Virtual Root
+    if id == "1" or id == "root":
+        return SubsonicResponse.create({
+            "status": "ok",
+            "version": settings.API_VERSION,
+            "directory": {
+                "id": id,
+                "name": "Tidal",
+                "child": [] 
+            }
+        }, fmt=f)
+    
+    try:
+        # Artist Folder -> Returns Albums
+        if id.startswith("artist-"):
+            real_id = int(id.split("-")[1])
+            
+            info_res = await hifi_client.get_artist(real_id)
+            artist_info = info_res.get("artist", {}) if isinstance(info_res, dict) else {}
+            artist_name = artist_info.get("name")
+            
+            albums_data = []
+            if artist_name:
+                s_res = await hifi_client.search_albums(artist_name)
+                root = s_res.get("data", s_res) if isinstance(s_res, dict) else {}
+                items = []
+                if "albums" in root and "items" in root["albums"]:
+                    items = root["albums"]["items"]
+                elif "items" in root:
+                    items = root["items"]
+                    
+                for it in items:
+                    aid = it.get("artist", {}).get("id")
+                    aname = it.get("artist", {}).get("name")
+                    
+                    match = False
+                    if not aid and not aname:
+                        if "artist" not in it:
+                            it["artist"] = {}
+                        it["artist"]["name"] = artist_name
+                        it["artist"]["id"] = real_id
+                        match = True
+                    elif aid and str(aid) == str(real_id):
+                        match = True
+                    elif aname and artist_name and aname.lower() == artist_name.lower():
+                        match = True
+
+                    if match:
+                        albums_data.append(it)
+            
+            children = []
+            for alb in albums_data:
+                cover_uuid = alb.get("cover")
+                cover_art_id = cover_uuid if cover_uuid else f"album-{alb['id']}"
+                
+                children.append({
+                    "id": f"album-{alb['id']}",
+                    "parent": id,
+                    "title": alb.get("title"),
+                    "artist": alb.get("artist", {}).get("name"),
+                    "isDir": True,
+                    "coverArt": cover_art_id
+                })
+            
+            return SubsonicResponse.create({
+                "status": "ok",
+                "version": settings.API_VERSION,
+                "directory": {
+                    "id": id,
+                    "name": "Artist Albums",
+                    "child": children
+                }
+            }, fmt=f)
+            
+        # Album Folder -> Returns Tracks
+        elif id.startswith("album-"):
+            real_id = int(id.split("-")[1])
+            data = await hifi_client.get_album(real_id)
+            items = data.get("data", {}).get("items", [])
+            children = []
+            
+            album_cover_uuid = data.get("data", {}).get("cover")
+            
+            for item in items:
+                cover_uuid = item.get("album", {}).get("cover") or album_cover_uuid
+                cover_art_id = cover_uuid if cover_uuid else f"album-{real_id}"
+
+                fmt_info = get_track_format(item)
+                children.append({
+                    "id": f"track-{item['id']}",
+                    "parent": id,
+                    "title": item.get("title"),
+                    "artist": item.get("artist", {}).get("name"),
+                    "artistId": f"artist-{item.get('artist', {}).get('id')}",
+                    "album": data.get("data", {}).get("title"),
+                    "albumId": f"album-{real_id}",
+                    "isDir": False,
+                    "duration": item.get("duration"),
+                    "coverArt": cover_art_id,
+                    "track": item.get("trackNumber"),
+                    "discNumber": item.get("volumeNumber"),
+                    "replayGain": item.get("replayGain"),
+                    "year": int(item.get("streamStartDate")[:4]) if item.get("streamStartDate") else None,
+                    **fmt_info
+                })
+
+            return SubsonicResponse.create({
+                "status": "ok",
+                "version": settings.API_VERSION,
+                "directory": {
+                    "id": id,
+                    "name": data.get("data", {}).get("title"),
+                    "child": children
+                }
+            }, fmt=f)
+            
+        else:
+            return SubsonicResponse.error(70, "Folder not found", fmt=f)
+
+    except Exception as e:
+        return SubsonicResponse.error(0, str(e), fmt=f)
+
+
+@router.get("/rest/getArtist.view")
+@router.get("/rest/getArtist")
+async def get_artist(
+    id: str,
+    commons: dict = Depends(common_params)
+):
+    f = commons["f"]
+    artist_id = id
+    if id.startswith("artist-"):
+        artist_id = id.split("-")[1]
+
+    try:
+        info_res = await hifi_client.get_artist(int(artist_id))
+        artist_info = info_res.get("artist", {}) if isinstance(info_res, dict) else {}
+        artist_name = artist_info.get("name")
+        
+        albums_items = []
+        if artist_name:
+            s_res = await hifi_client.search_albums(artist_name)
+            
+            root = s_res.get("data", s_res) if isinstance(s_res, dict) else {}
+            items = []
+            if "albums" in root and "items" in root["albums"]:
+                items = root["albums"]["items"]
+            elif "items" in root:
+                items = root["items"]
+                
+            for it in items:
+                aid = it.get("artist", {}).get("id")
+                aname = it.get("artist", {}).get("name")
+                
+                match = False
+                if not aid and not aname:
+                    if "artist" not in it:
+                        it["artist"] = {}
+                    it["artist"]["name"] = artist_name
+                    it["artist"]["id"] = artist_id
+                    match = True
+                elif aid and str(aid) == str(artist_id):
+                    match = True
+                elif aname and artist_name and aname.lower() == artist_name.lower():
+                    match = True
+                    
+                if match:
+                    albums_items.append(it)
+                    
+        albums = []
+        for alb in albums_items:
+            cover_uuid = alb.get("cover")
+            cover_art_id = cover_uuid if cover_uuid else f"album-{alb['id']}"
+            albums.append({
+                "id": f"album-{alb['id']}",
+                "name": alb.get("title"),
+                "artist": alb.get("artist", {}).get("name"),
+                "year": int(alb.get("releaseDate")[:4]) if alb.get("releaseDate") else None,
+                "songCount": alb.get("numberOfTracks"),
+                "coverArt": cover_art_id,
+                "isDir": True
+            })
+
+        cover_uuid = artist_info.get("picture")
+        cover_art_id = cover_uuid if cover_uuid else f"artist-{artist_id}"
+
+        return SubsonicResponse.create({
+            "status": "ok",
+            "version": settings.API_VERSION,
+            "artist": {
+                "id": f"artist-{artist_id}",
+                "name": artist_info.get("name"),
+                "coverArt": cover_art_id, 
+                "albumCount": len(albums),
+                "album": albums
+            }
+        }, fmt=f)
+
+    except Exception as e:
+        return SubsonicResponse.error(0, str(e), fmt=f)
+
+
+@router.get("/rest/getAlbum.view")
+@router.get("/rest/getAlbum")
+async def get_album_endpoint(
+    id: str,
+    commons: dict = Depends(common_params)
+):
+    f = commons["f"]
+    album_id = id
+    if id.startswith("album-"):
+        album_id = id.split("-")[1]
+
+    try:
+        data = await hifi_client.get_album(int(album_id))
+        d = data.get("data", {}) if data else {}
+        
+        items = d.get("items", [])
+        songs = []
+        album_cover_uuid = d.get("cover")
+        
+        for entry in items:
+            item = entry.get("item", entry)
+            
+            cover_uuid = item.get("album", {}).get("cover") or album_cover_uuid
+            cover_art_id = cover_uuid if cover_uuid else f"album-{album_id}"
+            
+            fmt_info = get_track_format(item)
+            songs.append({
+                "id": f"track-{item['id']}",
+                "parent": f"album-{album_id}",
+                "title": item.get("title") or "Unknown Title",
+                "artist": item.get("artist", {}).get("name"),
+                "artistId": f"artist-{item.get('artist', {}).get('id')}",
+                "album": d.get("title"),
+                "albumId": f"album-{album_id}",
+                "coverArt": cover_art_id, 
+                "duration": item.get("duration"),
+                "track": item.get("trackNumber"),
+                "discNumber": item.get("volumeNumber"),
+                "replayGain": item.get("replayGain"),
+                "year": int(item.get("streamStartDate")[:4]) if item.get("streamStartDate") else None,
+                "isDir": False,
+                "isVideo": False,
+                "type": "music",
+                "created": "2025-01-01T00:00:00.000Z",
+                **fmt_info
+            })
+
+        cover_art_id = album_cover_uuid if album_cover_uuid else f"album-{album_id}"
+        
+        return SubsonicResponse.create({
+            "status": "ok",
+            "version": settings.API_VERSION,
+            "album": {
+                "id": f"album-{album_id}",
+                "name": d.get("title"),
+                "artist": d.get("artist", {}).get("name"),
+                "artistId": f"artist-{d.get('artist', {}).get('id')}",
+                "year": int(d.get("releaseDate")[:4]) if d.get("releaseDate") else None,
+                "songCount": d.get("numberOfTracks"),
+                "duration": sum(s.get("duration", 0) for s in songs),
+                "created": "2025-01-01T00:00:00.000Z",
+                "genre": "Pop",
+                "coverArt": cover_art_id,
+                "song": songs
+            }
+        }, fmt=f)
+
+    except Exception as e:
+        return SubsonicResponse.error(0, str(e), fmt=f)
+
+
+@router.get("/rest/getAlbumInfo2.view")
+@router.get("/rest/getAlbumInfo2")
+async def get_album_info2(
+    id: str,
+    request: Request,
+    commons: dict = Depends(common_params)
+):
+    f = commons["f"]
+    album_id = id
+    if id.startswith("album-"):
+        album_id = id.split("-")[1]
+
+    try:
+        data = await hifi_client.get_album(int(album_id))
+        d = data.get("data", {}) if data else {}
+        
+        if not d:
+            return SubsonicResponse.error(70, "Album not found", fmt=f)
+
+        notes = []
+        if d.get("releaseDate"):
+            notes.append(f"Released: {d['releaseDate']}")
+        if d.get("copyright"):
+            notes.append(d['copyright'])
+        if d.get("upc"):
+            notes.append(f"UPC: {d['upc']}")
+            
+        note_text = " \n".join(notes)
+
+        cover_uuid = d.get("cover")
+        if cover_uuid:
+            cover_url_base = f"https://resources.tidal.com/images/{cover_uuid.replace('-', '/')}"
+            small_url = f"{cover_url_base}/320x320.jpg"
+            large_url = f"{cover_url_base}/1280x1280.jpg"
+        else:
+            local_id = f"album-{album_id}"
+            base_url = str(request.base_url).rstrip("/")
+            small_url = f"{base_url}/rest/getCoverArt.view?id={local_id}&size=320"
+            large_url = f"{base_url}/rest/getCoverArt.view?id={local_id}&size=1280"
+
+        return SubsonicResponse.create({
+            "status": "ok",
+            "version": settings.API_VERSION,
+            "albumInfo": {
+                "notes": note_text,
+                "musicBrainzId": "",
+                "lastFmUrl": "",
+                "smallImageUrl": small_url,
+                "largeImageUrl": large_url,
+                "year": int(d.get("releaseDate")[:4]) if d.get("releaseDate") else None
+            }
+        }, fmt=f)
+
+    except Exception as e:
+        return SubsonicResponse.error(0, str(e), fmt=f)
+
+@router.get("/rest/getArtistInfo.view")
+@router.get("/rest/getArtistInfo")
+@router.get("/rest/getArtistInfo2.view")
+@router.get("/rest/getArtistInfo2")
+async def get_artist_info_endpoint(
+    id: str,
+    count: int = 20,
+    includeNotPresent: bool = False,
+    commons: dict = Depends(common_params)
+):
+    """
+    Get artist details and similar artists.
+    """
+    f = commons["f"]
+    
+    # Normalize ID
+    artist_id = id
+    if id.startswith("artist-"):
+        artist_id = id.split("-")[1]
+    
+    if not artist_id.isdigit():
+        return SubsonicResponse.error(70, "Artist not found", fmt=f)
+    
+    try:
+        # Fetch artist data and similar artists in parallel
+        artist_res, similar_res = await asyncio.gather(
+            hifi_client.get_artist(int(artist_id)),
+            hifi_client.get_similar_artists(int(artist_id)),
+            return_exceptions=True
+        )
+
+        # Process Artist Data
+        artist_data = {}
+        cover_urls = {}
+        if isinstance(artist_res, dict):
+            artist_data = artist_res.get("artist", {}) or artist_res.get("data", {})
+            
+            # Extract cover URLs if available
+            picture_uuid = artist_data.get("picture")
+            if picture_uuid:
+                slug = picture_uuid.replace("-", "/")
+                cover_urls = {
+                   "small": f"https://resources.tidal.com/images/{slug}/320x320.jpg",
+                   "medium": f"https://resources.tidal.com/images/{slug}/640x640.jpg",
+                   "large": f"https://resources.tidal.com/images/{slug}/750x750.jpg" 
+                }
+        
+        # Process Similar Artists
+        similar_artists = []
+        if isinstance(similar_res, dict):
+            # API returns { "artists": [ ... ] } or { "data": [ ... ] } depending on endpoint wrapper
+            sim_list = similar_res.get("artists", []) or similar_res.get("data", [])
+            for sim in sim_list[:count]:
+                sid = sim.get("id")
+                sname = sim.get("name")
+                if sid and sname:
+                    
+                     # Extract cover for similar artist
+                    spic = sim.get("picture")
+                    s_cover = None
+                    if spic:
+                        slug = spic.replace("-", "/")
+                        s_cover = f"https://resources.tidal.com/images/{slug}/320x320.jpg"
+
+                    similar_artists.append({
+                        "id": f"artist-{sid}",
+                        "name": sname,
+                        "coverArt": f"artist-{sid}", # Fallback or actual ID
+                        "albumCount": 0, # Not provided by similar endpoint
+                        "imageUrl": s_cover
+                    })
+
+        # Construct Response
+        info = {
+            "biography": "", # Tidal API doesn't provide bio in standard endpoint
+            "musicBrainzId": "",
+            "lastFmUrl": f"https://www.last.fm/music/{artist_data.get('name', '').replace(' ', '+')}",
+            "smallImageUrl": cover_urls.get("small"),
+            "mediumImageUrl": cover_urls.get("medium"),
+            "largeImageUrl": cover_urls.get("large"),
+            "similarArtist": similar_artists
+        }
+
+        return SubsonicResponse.create({
+            "status": "ok",
+            "version": settings.API_VERSION,
+            "artistInfo2": info
+        }, fmt=f)
+
+    except Exception as e:
+        return SubsonicResponse.error(0, str(e), fmt=f)

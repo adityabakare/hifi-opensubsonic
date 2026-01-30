@@ -3,6 +3,12 @@ import xmltodict
 from fastapi import Response
 from fastapi.responses import JSONResponse
 
+class SubsonicException(Exception):
+    def __init__(self, code: int, message: str, fmt: str = "json"):
+        self.code = code
+        self.message = message
+        self.fmt = fmt
+
 class SubsonicResponse:
     @staticmethod
     def create(data: Dict[str, Any], fmt: str = "json", content_type: str = None) -> Response:
@@ -22,11 +28,24 @@ class SubsonicResponse:
             return JSONResponse(content=wrapped_data)
         
         elif fmt == "xml":
-            # Convert dict to XML
-            # xmltodict.unparse can do this.
-            # We need to ensure the root element is subsonic-response with xmlns
-            # But normally we just pass the dict structure that matches.
-            xml_content = xmltodict.unparse(wrapped_data, pretty=True)
+            # Convert dict to XML with attributes
+            # We need to ensure status and version are attributes (@ prefixed)
+            
+            # Deep copy or new dict to avoid mutating original for other uses
+            xml_data = wrapped_data.copy()
+            root = xml_data.get("subsonic-response", {})
+            
+            # Remap specific top-level keys to attributes for XML
+            if isinstance(root, dict):
+                for key in ["status", "version", "xmlns"]:
+                    if key in root:
+                        root[f"@{key}"] = root.pop(key)
+                
+                # Also, Subsonic usually includes xmlns="http://subsonic.org/restapi"
+                if "@xmlns" not in root:
+                    root["@xmlns"] = "http://subsonic.org/restapi"
+            
+            xml_content = xmltodict.unparse(xml_data, pretty=True)
             return Response(content=xml_content, media_type="application/xml")
         
         else:
