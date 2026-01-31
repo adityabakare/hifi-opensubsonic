@@ -109,4 +109,8 @@ class HifiClient:
     async def get_stream_url(self, track_id: int) -> Optional[str]:
         return await self.get_track(track_id)
 
+    async def get_lyrics(self, track_id: int):
+        """Get lyrics for a track ID."""
+        return await self._get("/lyrics/", params={"id": track_id})
+
 hifi_client = HifiClient()

@@ -185,7 +185,7 @@ async def get_playlists(
             "owner": user.username,
             "public": pl.public,
             "songCount": len(entries),
-            "duration": 0,  # Would need track metadata
+            "duration": sum(e.duration or 0 for e in entries),
             "created": pl.created_at.isoformat() + "Z",
             "changed": pl.changed_at.isoformat() + "Z"
         })

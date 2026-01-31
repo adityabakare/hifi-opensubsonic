@@ -200,3 +200,101 @@ async def get_song(
         pass
         
     return SubsonicResponse.error(70, "Song not found", fmt=commons["f"])
+
+@router.get("/rest/getLyricsBySongId.view")
+@router.get("/rest/getLyricsBySongId")
+async def get_lyrics_by_song_id(
+    id: str,
+    commons: dict = Depends(common_params)
+):
+    """
+    OpenSubsonic extension: Get lyrics by song ID.
+    PROXIES to hifi-api /lyrics/ endpoint.
+    """
+    track_id = id
+    if id.startswith("track-"):
+        track_id = id.split("-")[1]
+    
+    try:
+        data = await hifi_client.get_lyrics(int(track_id))
+        if data and "lyrics" in data:
+            # hifi-api returns raw string or dict? upstream main.py says: return {"lyrics": data}
+            # and data comes from Tidal /lyrics endpoint which returns JSON.
+            # We need to extract the actual lyrics text.
+            
+            # Tidal /lyrics response structure:
+            # {
+            #   "trackId": 123,
+            #   "lyrics": "Line 1\nLine 2...",
+            #   "syncLyrics": "..."
+            # }
+            # hifi-api returns: {"version":..., "lyrics": <tidal_resp>}
+            
+            lyrics_data = data["lyrics"]
+            content = lyrics_data.get("lyrics")
+            
+            if content:
+                return SubsonicResponse.create({
+                    "lyrics": {
+                        "artist": "Unknown", # We don't have this unless we fetch track info too
+                        "title": "Unknown",
+                        "value": content
+                    }
+                }, fmt=commons["f"])
+                
+    except Exception as e:
+        logger.warning(f"Lyrics fetch failed for {id}: {e}")
+        pass
+        
+    return SubsonicResponse.error(70, "Lyrics not found", fmt=commons["f"])
+
+
+@router.get("/rest/getLyrics.view")
+@router.get("/rest/getLyrics")
+async def get_lyrics(
+    artist: Optional[str] = None,
+    title: Optional[str] = None,
+    commons: dict = Depends(common_params)
+):
+    """
+    Standard Subsonic getLyrics.
+    Attempts to find song by Artist + Title, then fetches lyrics.
+    """
+    if not artist or not title:
+         return SubsonicResponse.error(10, "Artist and title required", fmt=commons["f"])
+         
+    query = f"{artist} {title}"
+    try:
+        # 1. Search for the track
+        search_res = await hifi_client.search_tracks(query)
+        items = []
+        if search_res and "data" in search_res:
+             items = search_res["data"].get("items", [])
+             
+        if not items:
+             return SubsonicResponse.error(70, "Song not found", fmt=commons["f"])
+             
+        # 2. Use the first match's ID to get lyrics
+        first_match = items[0]
+        track_id = first_match.get("id")
+        
+        # 3. Fetch Lyrics
+        data = await hifi_client.get_lyrics(track_id)
+        if data and "lyrics" in data:
+            lyrics_data = data["lyrics"]
+            content = lyrics_data.get("lyrics")
+            
+            if content:
+                return SubsonicResponse.create({
+                    "lyrics": {
+                        "artist": artist,
+                        "title": title,
+                        "value": content
+                    }
+                }, fmt=commons["f"])
+
+    except Exception as e:
+        logger.warning(f"Lyrics search/fetch failed for {query}: {e}")
+        pass
+
+    return SubsonicResponse.error(70, "Lyrics not found", fmt=commons["f"])

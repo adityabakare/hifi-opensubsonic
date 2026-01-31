@@ -22,6 +22,24 @@ async def ping(commons: dict = Depends(common_params)):
         "serverVersion": settings.API_VERSION
     }, fmt=commons["f"])
 
+
+@router.get("/rest/getOpenSubsonicExtensions.view")
+@router.get("/rest/getOpenSubsonicExtensions")
+@router.post("/rest/getOpenSubsonicExtensions.view")
+@router.post("/rest/getOpenSubsonicExtensions")
+async def get_opensubsonic_extensions(commons: dict = Depends(common_params)):
+    """
+    List supported OpenSubsonic extensions.
+    """
+    return SubsonicResponse.create({
+        "status": "ok",
+        "version": settings.API_VERSION,
+        "openSubsonicExtensions": [
+            {"name": "lyrics", "versions": [1]},
+            {"name": "formPost", "versions": [1]}
+        ]
+    }, fmt=commons["f"])
+
 @router.get("/rest/getLicense.view")
 @router.get("/rest/getLicense")
 async def get_license(commons: dict = Depends(common_params)):
