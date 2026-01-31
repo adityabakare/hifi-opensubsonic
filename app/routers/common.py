@@ -88,3 +88,103 @@ def get_track_format(item: dict) -> dict:
             "size": int((exact_bitrate if exact_bitrate else 96) * 1000 * item.get("duration", 0) / 8),
             "path": f"music/{item.get('id')}.m4a"
         }
+
+
+def extract_track_metadata(track: dict) -> dict:
+    """
+    Extract complete track metadata from a Tidal track response.
+    Used by search, browsing, and playlist endpoints for consistency.
+    
+    Args:
+        track: Raw track data from hifi-api (/info, /search, /album)
+    
+    Returns:
+        dict: Complete Subsonic-compatible track metadata
+    """
+    # Get format info (bitRate, bitDepth, samplingRate, suffix, contentType, size, path)
+    fmt_info = get_track_format(track)
+    
+    # Cover art ID (prefer UUID, fallback to album-{id})
+    cover_uuid = track.get("album", {}).get("cover")
+    cover_art_id = cover_uuid if cover_uuid else f"album-{track.get('album', {}).get('id')}"
+    
+    # Extract year from streamStartDate or releaseDate
+    year = None
+    if track.get("streamStartDate"):
+        try:
+            year = int(track.get("streamStartDate")[:4])
+        except:
+            pass
+    elif track.get("releaseDate"):
+        try:
+            year = int(track.get("releaseDate")[:4])
+        except:
+            pass
+    
+    return {
+        "id": f"track-{track.get('id')}",
+        "title": track.get("title") or "Unknown Title",
+        "artist": track.get("artist", {}).get("name") or "Unknown Artist",
+        "artistId": f"artist-{track.get('artist', {}).get('id')}",
+        "album": track.get("album", {}).get("title") or "Unknown Album",
+        "albumId": f"album-{track.get('album', {}).get('id')}",
+        "coverArt": cover_art_id,
+        "duration": track.get("duration") or 0,
+        "track": track.get("trackNumber"),
+        "discNumber": track.get("volumeNumber"),
+        "year": year,
+        "replayGain": track.get("trackReplayGain") or track.get("replayGain"),
+        "parent": f"album-{track.get('album', {}).get('id')}",
+        "isDir": False,
+        "isVideo": False,
+        "type": "music",
+        **fmt_info
+    }
+
+
+def extract_playlist_entry_data(track: dict) -> dict:
+    """
+    Extract track metadata for PlaylistEntry storage (snake_case keys).
+    Uses the same logic as extract_track_metadata but returns DB-compatible field names.
+    
+    Args:
+        track: Raw track data from hifi-api (/info endpoint)
+    
+    Returns:
+        dict: PlaylistEntry-compatible metadata (snake_case keys)
+    """
+    fmt_info = get_track_format(track)
+    
+    cover_uuid = track.get("album", {}).get("cover")
+    cover_art_id = cover_uuid if cover_uuid else f"album-{track.get('album', {}).get('id')}"
+    
+    year = None
+    if track.get("streamStartDate"):
+        try:
+            year = int(track.get("streamStartDate")[:4])
+        except:
+            pass
+    elif track.get("releaseDate"):
+        try:
+            year = int(track.get("releaseDate")[:4])
+        except:
+            pass
+    
+    return {
+        "track_id": f"track-{track.get('id')}",
+        "title": track.get("title") or "Unknown Title",
+        "artist": track.get("artist", {}).get("name") or "Unknown Artist",
+        "artist_id": f"artist-{track.get('artist', {}).get('id')}",
+        "album": track.get("album", {}).get("title") or "Unknown Album",
+        "album_id": f"album-{track.get('album', {}).get('id')}",
+        "cover_art": cover_art_id,
+        "duration": track.get("duration") or 0,
+        "track_number": track.get("trackNumber"),
+        "disc_number": track.get("volumeNumber"),
+        "year": year,
+        "bit_rate": fmt_info.get("bitRate", 1411),
+        "bit_depth": fmt_info.get("bitDepth", 16),
+        "sampling_rate": fmt_info.get("samplingRate", 44100),
+        "suffix": fmt_info.get("suffix", "flac"),
+        "content_type": fmt_info.get("contentType", "audio/flac"),
+    }

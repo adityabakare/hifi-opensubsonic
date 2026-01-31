@@ -4,6 +4,7 @@ These endpoints persist data per-user in the database.
 """
 from fastapi import APIRouter, Query, Depends
 from sqlalchemy.future import select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 from typing import Optional, List
@@ -12,7 +13,8 @@ from app.config import settings
 from app.database import get_session
 from app.models import Star, Playlist, PlaylistEntry, Scrobble
 from app.responses import SubsonicResponse
-from app.routers.common import common_params
+from app.routers.common import common_params, extract_playlist_entry_data
+from app.hifi_client import hifi_client
 
 router = APIRouter()
 
@@ -244,6 +246,8 @@ async def get_playlist(
             "discNumber": entry.disc_number,
             "year": entry.year,
             "bitRate": entry.bit_rate or 1411,
+            "bitDepth": entry.bit_depth or 16,
+            "samplingRate": entry.sampling_rate or 44100,
             "suffix": entry.suffix or "flac",
             "contentType": entry.content_type or "audio/flac",
             "size": int(duration * (entry.bit_rate or 1411) * 125), # Estimate size (kbps -> bytes)
@@ -305,7 +309,6 @@ async def create_playlist(
         await session.flush()  # Get the ID
     # Add songs if provided
     if songId:
-        from app.hifi_client import hifi_client
         
         # Get current max position
         pos_stmt = select(PlaylistEntry).where(PlaylistEntry.playlist_id == pl.id)
@@ -315,60 +318,25 @@ async def create_playlist(
         
         for i, track_id in enumerate(songId):
             # Normalize track_id to "track-123" format
-            normalized_id = track_id if track_id.startswith("track-") else f"track-{track_id}"
             numeric_id = track_id.split("-")[1] if track_id.startswith("track-") else track_id
             
-            # Fetch track metadata from /info endpoint
-            title = f"Track {numeric_id}"
-            artist = None
-            artist_id = None
-            album = None
-            album_id = None
-            duration = None
-            cover_art = None
-            year = None
-            track_number = None
-            disc_number = None
+            # Fetch track metadata using shared function
+            entry_data = {
+                "track_id": track_id if track_id.startswith("track-") else f"track-{track_id}",
+                "title": f"Track {numeric_id}",
+            }
 
             try:
                 data = await hifi_client.get_track_info(int(numeric_id))
                 if data and "data" in data:
-                    track = data["data"]
-                    title = track.get("title") or title
-                    artist = track.get("artist", {}).get("name")
-                    artist_id = f"artist-{track.get('artist', {}).get('id')}"
-                    album = track.get("album", {}).get("title")
-                    album_id = f"album-{track.get('album', {}).get('id')}"
-                    duration = track.get("duration")
-                    cover_art = track.get("album", {}).get("cover") or album_id
-                    
-                    track_number = track.get("trackNumber")
-                    disc_number = track.get("volumeNumber")
-                    if track.get("streamStartDate"):
-                        try:
-                             year = int(track.get("streamStartDate")[:4])
-                        except: pass
-                    elif track.get("releaseDate"):
-                        try:
-                             year = int(track.get("releaseDate")[:4])
-                        except: pass
+                    entry_data = extract_playlist_entry_data(data["data"])
             except Exception:
                 pass  # Use defaults
             
             entry = PlaylistEntry(
                 playlist_id=pl.id,
-                track_id=normalized_id,
                 position=max_pos + 1 + i,
-                title=title,
-                artist=artist,
-                artist_id=artist_id,
-                album=album,
-                album_id=album_id,
-                duration=duration,
-                cover_art=cover_art,
-                year=year,
-                track_number=track_number,
-                disc_number=disc_number
+                **entry_data
             )
             session.add(entry)
     
@@ -404,7 +372,6 @@ async def delete_playlist(
     
     # Delete entries first using bulk delete
     # We need to import delete at top level or use it here
-    from sqlalchemy import delete
     await session.execute(delete(PlaylistEntry).where(PlaylistEntry.playlist_id == pl.id))
     await session.flush()
     
@@ -469,10 +436,26 @@ async def update_playlist(
         max_pos = max([e.position for e in existing], default=-1)
         
         for i, track_id in enumerate(songIdToAdd):
+            # Normalize track_id to "track-123" format
+            numeric_id = track_id.split("-")[1] if track_id.startswith("track-") else track_id
+            
+            # Fetch track metadata using shared function
+            entry_data = {
+                "track_id": track_id if track_id.startswith("track-") else f"track-{track_id}",
+                "title": f"Track {numeric_id}",
+            }
+
+            try:
+                data = await hifi_client.get_track_info(int(numeric_id))
+                if data and "data" in data:
+                    entry_data = extract_playlist_entry_data(data["data"])
+            except Exception:
+                pass  # Use defaults
+            
             entry = PlaylistEntry(
                 playlist_id=pl.id,
-                track_id=track_id,
-                position=max_pos + 1 + i
+                position=max_pos + 1 + i,
+                **entry_data
             )
             session.add(entry)
     

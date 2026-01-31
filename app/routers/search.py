@@ -7,7 +7,7 @@ import asyncio
 from app.config import settings
 from app.hifi_client import hifi_client
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, get_track_format
+from app.routers.common import common_params, get_track_format, extract_track_metadata
 
 router = APIRouter()
 
@@ -39,28 +39,7 @@ async def search3(
                 items = root.get("items", [])
 
             for it in items:
-                cover_uuid = it.get("album", {}).get("cover")
-                cover_art_id = cover_uuid if cover_uuid else f"album-{it.get('album', {}).get('id')}"
-
-                fmt_info = get_track_format(it)
-
-                songs.append({
-                    "id": f"track-{it['id']}",
-                    "title": it.get("title") or "Unknown Title",
-                    "artist": it.get("artist", {}).get("name") or "Unknown Artist",
-                    "artistId": f"artist-{it.get('artist', {}).get('id')}",
-                    "album": it.get("album", {}).get("title") or "Unknown Album",
-                    "albumId": f"album-{it.get('album', {}).get('id')}",
-                    "coverArt": cover_art_id,
-                    "duration": it.get("duration") or 0,
-                    "isDir": False,
-                    "track": it.get("trackNumber"),
-                    "discNumber": it.get("volumeNumber"),
-                    "replayGain": it.get("replayGain"),
-                    "year": int(it.get("streamStartDate")[:4]) if it.get("streamStartDate") else None,
-                    "parent": f"album-{it.get('album', {}).get('id')}",
-                    **fmt_info 
-                })
+                songs.append(extract_track_metadata(it))
             
         artists = []
         if isinstance(a_res, dict):
