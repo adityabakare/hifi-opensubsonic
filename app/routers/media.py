@@ -1,7 +1,7 @@
 """
 Media endpoints for streaming and cover art.
 """
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, Form
 from fastapi.responses import RedirectResponse, Response
 from typing import Optional
 import base64
@@ -160,10 +160,18 @@ async def stream(
 
 @router.get("/rest/getSong.view")
 @router.get("/rest/getSong")
+@router.post("/rest/getSong.view")
+@router.post("/rest/getSong")
 async def get_song(
-    id: str,
+    id: str = Query(None),
+    id_form: str = Form(None, alias="id"),
     commons: dict = Depends(common_params)
 ):
+    real_id = id or id_form
+    if not real_id:
+        return SubsonicResponse.error(10, "Required parameter is missing, id not found", fmt=commons["f"])
+    
+    id = real_id
     track_id = id
     if id.startswith("track-"):
         track_id = id.split("-")[1]

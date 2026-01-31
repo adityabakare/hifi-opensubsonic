@@ -1,7 +1,7 @@
 """
 Browsing endpoints for navigating the music library.
 """
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Query, Form
 import asyncio
 
 from app.config import settings
@@ -14,6 +14,8 @@ router = APIRouter()
 
 @router.get("/rest/getMusicFolders.view")
 @router.get("/rest/getMusicFolders")
+@router.post("/rest/getMusicFolders.view")
+@router.post("/rest/getMusicFolders")
 async def get_music_folders(commons: dict = Depends(common_params)):
     return SubsonicResponse.create({
         "status": "ok",
@@ -28,14 +30,22 @@ async def get_music_folders(commons: dict = Depends(common_params)):
 
 @router.get("/rest/getMusicDirectory.view")
 @router.get("/rest/getMusicDirectory")
+@router.post("/rest/getMusicDirectory.view")
+@router.post("/rest/getMusicDirectory")
 async def get_music_directory(
-    id: str,
+    id: str = Query(None),
+    id_form: str = Form(None, alias="id"),
     commons: dict = Depends(common_params)
 ):
     """
     Returns contents of a directory.
     """
     f = commons["f"]
+    real_id = id or id_form
+    if not real_id:
+        return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
+        
+    id = real_id # Use merged ID
     
     # Virtual Root
     if id == "1" or id == "root":
@@ -163,10 +173,15 @@ async def get_music_directory(
 @router.get("/rest/getArtist.view")
 @router.get("/rest/getArtist")
 async def get_artist(
-    id: str,
+    id: str = Query(None),
+    id_form: str = Form(None, alias="id"),
     commons: dict = Depends(common_params)
 ):
     f = commons["f"]
+    real_id = id or id_form
+    if not real_id:
+        return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
+    id = real_id
     artist_id = id
     if id.startswith("artist-"):
         artist_id = id.split("-")[1]
@@ -242,10 +257,15 @@ async def get_artist(
 @router.get("/rest/getAlbum.view")
 @router.get("/rest/getAlbum")
 async def get_album_endpoint(
-    id: str,
+    id: str = Query(None),
+    id_form: str = Form(None, alias="id"),
     commons: dict = Depends(common_params)
 ):
     f = commons["f"]
+    real_id = id or id_form
+    if not real_id:
+        return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
+    id = real_id
     album_id = id
     if id.startswith("album-"):
         album_id = id.split("-")[1]
@@ -313,11 +333,16 @@ async def get_album_endpoint(
 @router.get("/rest/getAlbumInfo2.view")
 @router.get("/rest/getAlbumInfo2")
 async def get_album_info2(
-    id: str,
     request: Request,
+    id: str = Query(None),
+    id_form: str = Form(None, alias="id"),
     commons: dict = Depends(common_params)
 ):
     f = commons["f"]
+    real_id = id or id_form
+    if not real_id:
+        return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
+    id = real_id
     album_id = id
     if id.startswith("album-"):
         album_id = id.split("-")[1]
@@ -371,15 +396,26 @@ async def get_album_info2(
 @router.get("/rest/getArtistInfo2.view")
 @router.get("/rest/getArtistInfo2")
 async def get_artist_info_endpoint(
-    id: str,
-    count: int = 20,
-    includeNotPresent: bool = False,
+    id: str = Query(None),
+    count: int = Query(20),
+    includeNotPresent: bool = Query(False),
+    
+    id_form: str = Form(None, alias="id"),
+    count_form: int = Form(None, alias="count"),
+    
     commons: dict = Depends(common_params)
 ):
     """
     Get artist details and similar artists.
     """
     f = commons["f"]
+    
+    real_id = id or id_form
+    if not real_id:
+        return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
+    id = real_id
+    
+    count = count_form if count_form is not None else count
     
     # Normalize ID
     artist_id = id

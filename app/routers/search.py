@@ -1,7 +1,7 @@
 """
 Search endpoints for music discovery.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Form
 import asyncio
 
 from app.config import settings
@@ -15,13 +15,36 @@ router = APIRouter()
 @router.get("/rest/search3.view")
 @router.get("/rest/search3")
 async def search3(
-    query: str,
-    songCount: int = 20,
-    albumCount: int = 20,
-    artistCount: int = 20,
+    query: str = Query(None),
+    songCount: int = Query(20),
+    albumCount: int = Query(20),
+    artistCount: int = Query(20),
+    songOffset: int = Query(0),
+    albumOffset: int = Query(0),
+    artistOffset: int = Query(0),
+    # Form vars
+    query_form: str = Form(None, alias="query"),
+    songCount_form: int = Form(None, alias="songCount"),
+    albumCount_form: int = Form(None, alias="albumCount"),
+    artistCount_form: int = Form(None, alias="artistCount"),
+    songOffset_form: int = Form(None, alias="songOffset"),
+    albumOffset_form: int = Form(None, alias="albumOffset"),
+    artistOffset_form: int = Form(None, alias="artistOffset"),
+    
     commons: dict = Depends(common_params)
 ):
     f = commons["f"]
+    query = query or query_form
+    songCount = songCount_form if songCount_form is not None else songCount
+    albumCount = albumCount_form if albumCount_form is not None else albumCount
+    artistCount = artistCount_form if artistCount_form is not None else artistCount
+    
+    songOffset = songOffset_form if songOffset_form is not None else songOffset
+    albumOffset = albumOffset_form if albumOffset_form is not None else albumOffset
+    artistOffset = artistOffset_form if artistOffset_form is not None else artistOffset
+    
+    if not query:
+         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
     
     try:
         t_res, a_res, al_res = await asyncio.gather(
@@ -90,9 +113,9 @@ async def search3(
             "status": "ok",
             "version": settings.API_VERSION,
             "searchResult3": {
-                "song": songs[:songCount],
-                "artist": artists[:artistCount],
-                "album": albums[:albumCount]
+                "song": songs[songOffset : songOffset + songCount],
+                "artist": artists[artistOffset : artistOffset + artistCount],
+                "album": albums[albumOffset : albumOffset + albumCount]
             }
         }, fmt=f)
 

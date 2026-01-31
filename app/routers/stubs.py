@@ -2,7 +2,7 @@
 Stub endpoints for Subsonic API compliance.
 These endpoints return empty or acknowledgement responses.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Form
 
 from app.config import settings
 from app.responses import SubsonicResponse
@@ -13,26 +13,45 @@ router = APIRouter()
 
 @router.get("/rest/getAlbumList.view")
 @router.get("/rest/getAlbumList")
+@router.post("/rest/getAlbumList.view")
+@router.post("/rest/getAlbumList")
 @router.get("/rest/getAlbumList2.view")
 @router.get("/rest/getAlbumList2")
+@router.post("/rest/getAlbumList2.view")
+@router.post("/rest/getAlbumList2")
 async def get_album_list(
-    type: str = "random", 
-    size: int = 10, 
-    offset: int = 0, 
+    type: str = Query("random"), 
+    size: int = Query(10), 
+    offset: int = Query(0),
+    # Form variants
+    type_form: str = Form(None, alias="type"),
+    size_form: int = Form(None, alias="size"),
+    offset_form: int = Form(None, alias="offset"),
+    
     commons: dict = Depends(common_params)
 ):
     """
     Stub for getAlbumList/2. Returns empty list.
     """
+    f = commons["f"]
+    # Logic to merge Query vs Form
+    # type defaults to "random", type_form defaults to None.
+    # If type_form is present, use it. Else use type (which captures URL or default).
+    final_type = type_form if type_form else type
+    final_size = size_form if size_form is not None else size
+    final_offset = offset_form if offset_form is not None else offset
+    
     return SubsonicResponse.create({
         "status": "ok",
         "version": settings.API_VERSION,
         "albumList2": {"album": []}
-    }, fmt=commons["f"])
+    }, fmt=f)
 
 
 @router.get("/rest/getGenres.view")
 @router.get("/rest/getGenres")
+@router.post("/rest/getGenres.view")
+@router.post("/rest/getGenres")
 async def get_genres(commons: dict = Depends(common_params)):
     return SubsonicResponse.create({
         "status": "ok",
@@ -59,6 +78,8 @@ async def get_artists(commons: dict = Depends(common_params)):
 
 @router.get("/rest/getIndexes.view")
 @router.get("/rest/getIndexes")
+@router.post("/rest/getIndexes.view")
+@router.post("/rest/getIndexes")
 async def get_indexes(commons: dict = Depends(common_params)):
     """
     Stub for folder index. Returns empty.

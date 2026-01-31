@@ -1,7 +1,7 @@
 """
 Common utilities shared across all Subsonic router modules.
 """
-from fastapi import Query, Depends
+from fastapi import Query, Depends, Form
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,40 +13,60 @@ from app.auth import authenticate_user
 
 
 async def common_params(
-    u: str = Query(None),  # Username
-    p: str = Query(None),  # Password
-    t: str = Query(None),  # Token
-    s: str = Query(None),  # Salt
-    v: str = Query(None),  # Version
-    c: str = Query(None),  # Client
-    f: str = Query("json"),  # Format
+    u: Optional[str] = Query(None),
+    p: Optional[str] = Query(None),
+    t: Optional[str] = Query(None),
+    s: Optional[str] = Query(None),
+    v: Optional[str] = Query(None),
+    c: Optional[str] = Query(None),
+    f: str = Query("json"),
+    
+    # Form variants for POST requests
+    u_form: Optional[str] = Form(None, alias="u"),
+    p_form: Optional[str] = Form(None, alias="p"),
+    t_form: Optional[str] = Form(None, alias="t"),
+    s_form: Optional[str] = Form(None, alias="s"),
+    v_form: Optional[str] = Form(None, alias="v"),
+    c_form: Optional[str] = Form(None, alias="c"),
+    f_form: Optional[str] = Form(None, alias="f"),
+    
     session: AsyncSession = Depends(get_session),
 ):
     """
     Common authentication dependency for all Subsonic endpoints.
+    Support both Query params and Form data.
     """
-    fmt = f
+    # Merge values (Query takes precedence if both, or vice versa? Logic: check both)
+    final_u = u or u_form
+    final_p = p or p_form
+    final_t = t or t_form
+    final_s = s or s_form
+    final_v = v or v_form
+    final_c = c or c_form
+    final_f = f if f != "json" else (f_form or "json")
+    
+    fmt = final_f
     
     user = None
-    if u and p:
+    if final_u and final_p:
         # Handle 'enc:' hex-encoded passwords
-        password = p
-        if p.startswith("enc:"):
+        password = final_p
+        if final_p.startswith("enc:"):
             try:
-                hex_str = p[4:]
+                hex_str = final_p[4:]
                 password = bytes.fromhex(hex_str).decode("utf-8")
             except Exception:
                 pass  # Fallback to raw password if decode fails
         
-        user = await authenticate_user(session, u, password)
+        user = await authenticate_user(session, final_u, password)
 
     if not user:
-        if not u:
+        if not final_u:
             raise SubsonicException(code=10, message="Required parameter is missing.", fmt=fmt)
         else:
             raise SubsonicException(code=40, message="Wrong username or password", fmt=fmt)
     
-    return {"f": fmt, "v": v, "user": user}
+    return {"f": fmt, "v": final_v, "user": user}
 
 
 def get_track_format(item: dict) -> dict:
