@@ -3,6 +3,8 @@ import xmltodict
 from fastapi import Response
 from fastapi.responses import JSONResponse
 
+from app.config import settings
+
 class SubsonicException(Exception):
     def __init__(self, code: int, message: str, fmt: str = "json"):
         self.code = code
@@ -23,6 +25,17 @@ class SubsonicResponse:
             wrapped_data = {"subsonic-response": data}
         else:
             wrapped_data = data
+            
+        # Inject standard global attributes
+        root = wrapped_data.get("subsonic-response")
+        if isinstance(root, dict):
+            # Only inject if not already present (to allow overrides if ever needed)
+            if "type" not in root:
+                root["type"] = "hifi-opensubsonic"
+            if "serverVersion" not in root:
+                root["serverVersion"] = settings.SERVER_VERSION
+            if "openSubsonic" not in root:
+                root["openSubsonic"] = True
 
         if fmt == "json":
             return JSONResponse(content=wrapped_data)
@@ -37,7 +50,8 @@ class SubsonicResponse:
             
             # Remap specific top-level keys to attributes for XML
             if isinstance(root, dict):
-                for key in ["status", "version", "xmlns"]:
+                # Attributes list expanded to include new fields
+                for key in ["status", "version", "xmlns", "type", "serverVersion", "openSubsonic"]:
                     if key in root:
                         root[f"@{key}"] = root.pop(key)
                 

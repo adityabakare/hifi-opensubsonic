@@ -44,7 +44,10 @@ async def get_album_list(
     return SubsonicResponse.create({
         "status": "ok",
         "version": settings.API_VERSION,
-        "albumList2": {"album": []}
+        "albumList2": {
+            "album": [],
+            "type": final_type
+        }
     }, fmt=f)
 
 

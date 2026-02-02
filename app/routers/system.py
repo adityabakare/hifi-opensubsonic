@@ -16,10 +16,7 @@ async def ping(commons: dict = Depends(common_params)):
     """
     return SubsonicResponse.create({
         "status": "ok",
-        "version": settings.API_VERSION,
-        "openSubsonic": True,
-        "type": "hifi-opensubsonic",
-        "serverVersion": settings.API_VERSION
+        "version": settings.API_VERSION
     }, fmt=commons["f"])
 
 
