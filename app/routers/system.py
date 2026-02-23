@@ -6,6 +6,7 @@ from app.routers.common import common_params
 from app.responses import SubsonicResponse
 from app.auth import create_user, get_user_by_username
 from app.database import get_session
+from app.limiter import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from pydantic import BaseModel
@@ -194,7 +195,7 @@ async def create_user_admin(
 
 @router.post("/api/register")
 async def register_public_user(
-    request: RegisterRequest,
+    payload: RegisterRequest,
     response: Response,
     session: AsyncSession = Depends(get_session)
 ):
@@ -202,20 +203,20 @@ async def register_public_user(
     Public, unauthenticated endpoint to register a new user from the Web UI.
     Always enforces is_admin=False and automatically logs the user in upon success.
     """
-    if not request.username or not request.password:
+    if not payload.username or not payload.password:
         return {"status": "error", "message": "Username and password are required"}
         
     # Check if user exists
-    existing = await get_user_by_username(session, request.username)
+    existing = await get_user_by_username(session, payload.username)
     if existing:
         return {"status": "error", "message": "Username already taken"}
         
     try:
         new_user = await create_user(
             session=session,
-            username=request.username,
-            password=request.password,
-            email=request.email,
+            username=payload.username,
+            password=payload.password,
+            email=payload.email,
             is_admin=False
         )
         # Create JWT token
@@ -234,12 +235,12 @@ async def register_public_user(
 
 @router.post("/api/login")
 async def login_public_user(
-    request: LoginRequest,
+    payload: LoginRequest,
     response: Response,
     session: AsyncSession = Depends(get_session)
 ):
     from app.auth import authenticate_user
-    user = await authenticate_user(session, request.username, request.password)
+    user = await authenticate_user(session, payload.username, payload.password)
     if not user:
         return {"status": "error", "message": "Invalid username or password"}
         

@@ -14,6 +14,10 @@ from fastapi import Request
 from contextlib import asynccontextmanager
 from app.database import init_db
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.limiter import limiter
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
@@ -35,6 +39,12 @@ app = FastAPI(
     version=settings.SERVER_VERSION,
     lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+from slowapi.middleware import SlowAPIMiddleware
+app.add_middleware(SlowAPIMiddleware)
 
 @app.exception_handler(SubsonicException)
 async def subsonic_exception_handler(request: Request, exc: SubsonicException):
