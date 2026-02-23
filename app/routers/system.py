@@ -1,7 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Form
 from app.config import settings
 from app.routers.common import common_params
 from app.responses import SubsonicResponse
+from app.auth import create_user, get_user_by_username
+from app.database import get_session
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 
 router = APIRouter()
 
@@ -108,3 +112,63 @@ async def get_user(commons: dict = Depends(common_params)):
             "musicFolderId": [1] 
         }
     }, fmt=commons["f"])
+
+@router.get("/rest/createUser.view")
+@router.get("/rest/createUser")
+@router.post("/rest/createUser.view")
+@router.post("/rest/createUser")
+async def create_user_admin(
+    username: str = Query(None),
+    password: str = Query(None),
+    email: Optional[str] = Query(None),
+    adminRole: Optional[bool] = Query(False),
+    # Form vars
+    username_form: str = Form(None, alias="username"),
+    password_form: str = Form(None, alias="password"),
+    email_form: Optional[str] = Form(None, alias="email"),
+    adminRole_form: Optional[bool] = Form(None, alias="adminRole"),
+    
+    commons: dict = Depends(common_params),
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Creates a new Subsonic user. Require admin privileges.
+    """
+    user = commons["user"]
+    f = commons["f"]
+    
+    # Must be admin to create users
+    if not user.is_admin:
+        return SubsonicResponse.error(50, "User is not authorized for the given operation.", fmt=f)
+        
+    real_username = username or username_form
+    real_password = password or password_form
+    
+    if not real_username or not real_password:
+        return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
+        
+    real_email = email if email is not None else email_form
+    real_admin = adminRole if adminRole is not None else adminRole_form
+    
+    # Ensure user does not already exist
+    existing = await get_user_by_username(session, real_username)
+    if existing:
+        return SubsonicResponse.error(60, "The user already exists.", fmt=f)
+        
+    # Create the user natively
+    try:
+        new_user = await create_user(
+            session=session,
+            username=real_username,
+            password=real_password,
+            email=real_email,
+            is_admin=real_admin
+        )
+    except Exception as e:
+        return SubsonicResponse.error(0, "Generic error", fmt=f)
+
+    # Return empty successful ack as per Subsonic API spec logic
+    return SubsonicResponse.create({
+        "status": "ok",
+        "version": settings.API_VERSION
+    }, fmt=f)
