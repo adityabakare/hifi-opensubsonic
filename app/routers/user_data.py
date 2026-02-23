@@ -244,7 +244,12 @@ async def get_playlist(
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
     id = real_id
     
-    stmt = select(Playlist).where(Playlist.id == int(id))
+    try:
+        playlist_id_int = int(id)
+    except ValueError:
+        return SubsonicResponse.error(70, "Playlist not found", fmt=f)
+        
+    stmt = select(Playlist).where(Playlist.id == playlist_id_int)
     result = await session.execute(stmt)
     pl = result.scalars().first()
     
@@ -334,7 +339,12 @@ async def create_playlist(
     
     if playlistId:
         # Update existing playlist
-        stmt = select(Playlist).where(Playlist.id == int(playlistId))
+        try:
+            playlist_id_int = int(playlistId)
+        except ValueError:
+            return SubsonicResponse.error(70, "Playlist not found", fmt=f)
+            
+        stmt = select(Playlist).where(Playlist.id == playlist_id_int)
         result = await session.execute(stmt)
         pl = result.scalars().first()
         
@@ -417,7 +427,12 @@ async def delete_playlist(
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
     id = real_id
     
-    stmt = select(Playlist).where(Playlist.id == int(id))
+    try:
+        playlist_id_int = int(id)
+    except ValueError:
+        return SubsonicResponse.error(70, "Playlist not found", fmt=f)
+        
+    stmt = select(Playlist).where(Playlist.id == playlist_id_int)
     result = await session.execute(stmt)
     pl = result.scalars().first()
     
@@ -475,7 +490,12 @@ async def update_playlist(
     songIdToAdd = songIdToAdd if songIdToAdd else songIdToAdd_form
     songIndexToRemove = songIndexToRemove if songIndexToRemove else songIndexToRemove_form
     
-    stmt = select(Playlist).where(Playlist.id == int(playlistId))
+    try:
+        playlist_id_int = int(playlistId)
+    except ValueError:
+        return SubsonicResponse.error(70, "Playlist not found", fmt=f)
+        
+    stmt = select(Playlist).where(Playlist.id == playlist_id_int)
     result = await session.execute(stmt)
     pl = result.scalars().first()
     
