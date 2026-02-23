@@ -59,8 +59,9 @@ if os.path.exists(ui_path):
     # Serve index.html for root and SPA routes
     @app.get("/{full_path:path}")
     async def serve_ui(full_path: str):
-        if full_path.startswith("api/") or full_path.startswith("rest/"):
-            return {"error": "Not found"}
+        if full_path.startswith("api/") or full_path.startswith("rest/") or full_path.endswith(".view"):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not Found")
         return FileResponse(os.path.join(ui_path, "index.html"))
 else:
     @app.get("/")
