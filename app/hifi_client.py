@@ -1,8 +1,6 @@
 import httpx
 from typing import Optional, Dict, Any, List
-import json
 import random
-import os
 import logging
 from app.config import settings
 
@@ -15,24 +13,9 @@ class HifiClient:
         self.client = httpx.AsyncClient(timeout=60.0)
 
     def _load_instances(self):
-        """Load upstream instances from JSON or config."""
-        path = "instances.json"
-        
-        # Fallback to parent directory if running from subdir
-        if not os.path.exists(path) and os.path.exists(os.path.join("..", path)):
-            path = os.path.join("..", path)
-
-        if os.path.exists(path):
-            try:
-                with open(path, "r") as f:
-                    self.instances = json.load(f)
-                logger.info(f"Loaded {len(self.instances)} upstream instances.")
-            except Exception as e:
-                logger.error(f"Failed to load instances.json: {e}")
-        
-        # Fallback to default if empty
-        if not self.instances:
-            self.instances = [settings.HIFI_API_URL]
+        """Load upstream instances from HIFI_INSTANCES config."""
+        self.instances = list(settings.HIFI_INSTANCES)
+        logger.info(f"Loaded {len(self.instances)} upstream instances from environment.")
 
     async def close(self):
         await self.client.aclose()

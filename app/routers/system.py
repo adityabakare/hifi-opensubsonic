@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Query, Form
+from fastapi import APIRouter, Depends, Query, Form, Response, Request
+import jwt
+from datetime import datetime, timedelta, timezone
 from app.config import settings
 from app.routers.common import common_params
 from app.responses import SubsonicResponse
@@ -6,6 +8,23 @@ from app.auth import create_user, get_user_by_username
 from app.database import get_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
+from pydantic import BaseModel
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    email: Optional[str] = None
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(hours=settings.JWT_EXPIRATION_HOURS)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    return encoded_jwt
 
 router = APIRouter()
 
@@ -172,3 +191,92 @@ async def create_user_admin(
         "status": "ok",
         "version": settings.API_VERSION
     }, fmt=f)
+
+@router.post("/api/register")
+async def register_public_user(
+    request: RegisterRequest,
+    response: Response,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Public, unauthenticated endpoint to register a new user from the Web UI.
+    Always enforces is_admin=False and automatically logs the user in upon success.
+    """
+    if not request.username or not request.password:
+        return {"status": "error", "message": "Username and password are required"}
+        
+    # Check if user exists
+    existing = await get_user_by_username(session, request.username)
+    if existing:
+        return {"status": "error", "message": "Username already taken"}
+        
+    try:
+        new_user = await create_user(
+            session=session,
+            username=request.username,
+            password=request.password,
+            email=request.email,
+            is_admin=False
+        )
+        # Create JWT token
+        token = create_access_token(data={"sub": new_user.username})
+        response.set_cookie(
+            key="auth_token",
+            value=token,
+            httponly=True,
+            secure=False,
+            samesite="lax",
+            max_age=settings.JWT_EXPIRATION_HOURS * 3600
+        )
+        return {"status": "ok", "message": "User created successfully"}
+    except Exception as e:
+        return {"status": "error", "message": "Failed to create user"}
+
+@router.post("/api/login")
+async def login_public_user(
+    request: LoginRequest,
+    response: Response,
+    session: AsyncSession = Depends(get_session)
+):
+    from app.auth import authenticate_user
+    user = await authenticate_user(session, request.username, request.password)
+    if not user:
+        return {"status": "error", "message": "Invalid username or password"}
+        
+    token = create_access_token(data={"sub": user.username})
+    response.set_cookie(
+        key="auth_token",
+        value=token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=settings.JWT_EXPIRATION_HOURS * 3600
+    )
+    return {"status": "ok", "message": "Login successful"}
+
+@router.post("/api/logout")
+async def logout_user(response: Response):
+    response.delete_cookie(key="auth_token", httponly=True, secure=False, samesite="lax")
+    return {"status": "ok", "message": "Logged out successfully"}
+
+@router.get("/api/me")
+async def get_current_user_info(request: Request, session: AsyncSession = Depends(get_session)):
+    token = request.cookies.get("auth_token")
+    if not token:
+        return {"status": "error", "message": "Not authenticated"}
+        
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        username = payload.get("sub")
+        if username is None:
+            return {"status": "error", "message": "Invalid token"}
+            
+        user = await get_user_by_username(session, username)
+        if user is None:
+            return {"status": "error", "message": "User not found"}
+            
+        return {"status": "ok", "username": user.username}
+    except jwt.ExpiredSignatureError:
+        return {"status": "error", "message": "Token expired"}
+    except jwt.InvalidTokenError:
+        return {"status": "error", "message": "Invalid token"}

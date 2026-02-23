@@ -15,4 +15,5 @@ dependencies = [
     "uvicorn>=0.40.0",
     "xmltodict>=1.0.2",
     "python-multipart",
+    "pyjwt>=2.11.0",
 ]
