@@ -103,6 +103,8 @@ async def get_cover_art(
 
 @router.get("/rest/stream.view")
 @router.get("/rest/stream")
+@router.get("/rest/download.view")
+@router.get("/rest/download")
 async def stream(
     id: str,
     commons: dict = Depends(common_params)
