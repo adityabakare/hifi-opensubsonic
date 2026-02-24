@@ -241,7 +241,7 @@ async def get_lyrics_by_song_id(
             # hifi-api returns: {"version":..., "lyrics": <tidal_resp>}
             
             lyrics_data = data["lyrics"]
-            content = lyrics_data.get("lyrics")
+            content = lyrics_data.get("subtitles")
             
             if content:
                 return SubsonicResponse.create({
@@ -292,7 +292,7 @@ async def get_lyrics(
         data = await hifi_client.get_lyrics(track_id)
         if data and "lyrics" in data:
             lyrics_data = data["lyrics"]
-            content = lyrics_data.get("lyrics")
+            content = lyrics_data.get("subtitles")
             
             if content:
                 return SubsonicResponse.create({
