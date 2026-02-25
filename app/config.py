@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
 
 class Settings(BaseSettings):
     API_VERSION: str = "1.16.1"
@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 24
     HIFI_INSTANCES: List[str] = ["https://monochrome-api.samidy.com"]  # Upstream API URLs (JSON array in .env)
+    LASTFM_API_KEY: Optional[str] = None
+    LASTFM_API_SECRET: Optional[str] = None
 
     class Config:
         env_file = ".env"

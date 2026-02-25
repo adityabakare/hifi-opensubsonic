@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
-from app.routers import system, browsing, search, media, stubs, user_data
+from app.routers import system, browsing, search, media, stubs, user_data, lastfm
 from app.responses import SubsonicResponse, SubsonicException
 from app.auth import get_user_by_username, create_user
 from app.database import engine, get_session # for sessionmaker
@@ -56,6 +56,7 @@ app.include_router(search.router)
 app.include_router(media.router)
 app.include_router(user_data.router)  # Must be before stubs to override endpoints
 app.include_router(stubs.router)
+app.include_router(lastfm.router)
 
 
 # Serve Web UI

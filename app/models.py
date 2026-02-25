@@ -47,6 +47,7 @@ class User(SQLModel, table=True):
     email: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     is_admin: bool = False
+    lastfm_session_key: Optional[str] = None
 
 
 class Star(SQLModel, table=True):
@@ -95,13 +96,3 @@ class PlaylistEntry(SQLModel, table=True):
     content_type: Optional[str] = "audio/flac"
     is_video: bool = False
     is_dir: bool = False
-
-
-class Scrobble(SQLModel, table=True):
-    """Play history for scrobbling."""
-    id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: int = Field(foreign_key="user.id", index=True)
-    track_id: str
-    played_at: datetime = Field(default_factory=datetime.utcnow)
-
-

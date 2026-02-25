@@ -92,16 +92,7 @@ async def get_scan_status(commons: dict = Depends(common_params)):
         }
     }, fmt=commons["f"])
 
-@router.get("/rest/scrobble.view")
-@router.get("/rest/scrobble")
-async def scrobble(commons: dict = Depends(common_params)):
-    """
-    Stub for scrobble.
-    """
-    return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION
-    }, fmt=commons["f"])
+
 
 @router.get("/rest/getUser.view")
 @router.get("/rest/getUser")

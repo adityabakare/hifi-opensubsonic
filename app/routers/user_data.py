@@ -2,7 +2,7 @@
 User data endpoints - starred items, playlists, scrobbles.
 These endpoints persist data per-user in the database.
 """
-from fastapi import APIRouter, Query, Depends, Form
+from fastapi import APIRouter, Query, Depends, Form, BackgroundTasks
 from sqlalchemy.future import select
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,10 +11,11 @@ from typing import Optional, List
 
 from app.config import settings
 from app.database import get_session
-from app.models import Star, Playlist, PlaylistEntry, Scrobble
+from app.models import Star, Playlist, PlaylistEntry
 from app.responses import SubsonicResponse
 from app.routers.common import common_params, extract_playlist_entry_data
 from app.hifi_client import hifi_client
+from app.lastfm_client import lastfm_client
 
 router = APIRouter()
 
@@ -569,6 +570,7 @@ async def update_playlist(
 @router.post("/rest/scrobble.view")
 @router.post("/rest/scrobble")
 async def scrobble(
+    background_tasks: BackgroundTasks,
     id: str = Query(None),
     time: Optional[int] = Query(None),
     submission: bool = Query(True),
@@ -588,20 +590,34 @@ async def scrobble(
     if not id:
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
     
-    time = time if time is not None else time_form
-    submission = submission_form if (submission_form is not None) else submission
+    time_val = time if time is not None else time_form
+    submission_val = submission_form if (submission_form is not None) else submission
     
-    if submission:
-        played_at = datetime.utcfromtimestamp(time / 1000) if time else datetime.utcnow()
-        
-        scrobble_entry = Scrobble(
-            user_id=user.id,
-            track_id=id,
-            played_at=played_at
-        )
-        session.add(scrobble_entry)
-        await session.commit()
-    
+    if submission_val and user.lastfm_session_key:
+        track_id = id.split("-")[1] if id.startswith("track-") else id
+        try:
+            # Fetch track metadata to scrobble
+            data = await hifi_client.get_track_info(int(track_id))
+            if data and "data" in data:
+                track = data["data"]
+                artist = track.get("artist", {}).get("name")
+                title = track.get("title")
+                album = track.get("album", {}).get("title")
+                if artist and title:
+                    import time as pytime
+                    timestamp = int(time_val / 1000) if time_val else int(pytime.time())
+                    
+                    background_tasks.add_task(
+                        lastfm_client.scrobble_track,
+                        session_key=user.lastfm_session_key,
+                        artist=artist,
+                        track=title,
+                        timestamp=timestamp,
+                        album=album
+                    )
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Failed to scrobble to Last.fm: {e}")
+            
     return SubsonicResponse.create({
         "status": "ok",
         "version": settings.API_VERSION
