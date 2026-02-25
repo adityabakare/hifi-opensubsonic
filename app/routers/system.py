@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from app.config import settings
 from app.routers.common import common_params
 from app.responses import SubsonicResponse
-from app.auth import create_user, get_user_by_username, get_current_user
+from app.auth import create_user, get_user_by_username, get_current_user, authenticate_user
 from app.models import User
 from app.database import get_session
 from app.limiter import limiter
@@ -231,7 +231,6 @@ async def login_public_user(
     response: Response,
     session: AsyncSession = Depends(get_session)
 ):
-    from app.auth import authenticate_user
     user = await authenticate_user(session, payload.username, payload.password)
     if not user:
         return {"status": "error", "message": "Invalid username or password"}

@@ -4,7 +4,7 @@ These endpoints persist data per-user in the database.
 """
 from fastapi import APIRouter, Query, Depends, Form, BackgroundTasks
 from sqlalchemy.future import select
-from sqlalchemy import delete
+from sqlalchemy import delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from typing import Optional, List
@@ -16,6 +16,7 @@ from app.responses import SubsonicResponse
 from app.routers.common import common_params, extract_playlist_entry_data
 from app.hifi_client import hifi_client
 from app.lastfm_client import lastfm_client
+import time as pytime
 
 router = APIRouter()
 
@@ -196,25 +197,30 @@ async def get_playlists(
     user = commons["user"]
     f = commons["f"]
     
-    stmt = select(Playlist).where(Playlist.user_id == user.id)
+    # Single query: join playlists with aggregated entry stats
+    stmt = (
+        select(
+            Playlist,
+            func.count(PlaylistEntry.id).label("song_count"),
+            func.coalesce(func.sum(PlaylistEntry.duration), 0).label("total_duration")
+        )
+        .outerjoin(PlaylistEntry, PlaylistEntry.playlist_id == Playlist.id)
+        .where(Playlist.user_id == user.id)
+        .group_by(Playlist.id)
+    )
     result = await session.execute(stmt)
-    playlists = result.scalars().all()
+    rows = result.all()
     
     playlist_list = []
-    for pl in playlists:
-        # Count entries
-        count_stmt = select(PlaylistEntry).where(PlaylistEntry.playlist_id == pl.id)
-        count_result = await session.execute(count_stmt)
-        entries = count_result.scalars().all()
-        
+    for pl, song_count, total_duration in rows:
         playlist_list.append({
             "id": str(pl.id),
             "name": pl.name,
             "comment": pl.comment or "",
             "owner": user.username,
             "public": pl.public,
-            "songCount": len(entries),
-            "duration": sum(e.duration or 0 for e in entries),
+            "songCount": song_count,
+            "duration": total_duration,
             "created": pl.created_at.isoformat() + "Z",
             "changed": pl.changed_at.isoformat() + "Z"
         })
@@ -604,7 +610,6 @@ async def scrobble(
                 title = track.get("title")
                 album = track.get("album", {}).get("title")
                 if artist and title:
-                    import time as pytime
                     timestamp = int(time_val / 1000) if time_val else int(pytime.time())
                     
                     background_tasks.add_task(
