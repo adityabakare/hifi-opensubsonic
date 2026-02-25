@@ -60,11 +60,12 @@ async def get_music_directory(
         if id.startswith("artist-"):
             artist_id = int(id.split("-")[1])
             
-            info_res = await hifi_client.get_artist(artist_id)
+            # Fetch artist info and albums concurrently
+            info_res, albums_data = await asyncio.gather(
+                hifi_client.get_artist(artist_id),
+                fetch_artist_albums(artist_id)
+            )
             artist_info = info_res.get("artist", {}) if isinstance(info_res, dict) else {}
-            artist_name = artist_info.get("name")
-            
-            albums_data = await fetch_artist_albums(artist_id, artist_name)
             
             children = []
             for alb in albums_data:
@@ -141,11 +142,12 @@ async def get_artist(
         artist_id = int(id)
 
     try:
-        info_res = await hifi_client.get_artist(artist_id)
+        # Fetch artist info and albums concurrently
+        info_res, albums_items = await asyncio.gather(
+            hifi_client.get_artist(artist_id),
+            fetch_artist_albums(artist_id)
+        )
         artist_info = info_res.get("artist", {}) if isinstance(info_res, dict) else {}
-        artist_name = artist_info.get("name")
-        
-        albums_items = await fetch_artist_albums(artist_id, artist_name)
                     
         albums = []
         for alb in albums_items:

@@ -214,19 +214,29 @@ def extract_playlist_entry_data(track: dict) -> dict:
     }
 
 
-async def fetch_artist_albums(artist_id, artist_name: str) -> list:
+async def fetch_artist_albums(artist_id: int, artist_name: str = "") -> list:
     """
-    Search for albums by artist name and filter results to match the artist.
-    Matches by artist ID (exact) or artist name (case-insensitive).
-    If an album has no artist info, it is assumed to match and is backfilled.
+    Fetch all albums for an artist using the upstream's direct endpoint.
+    Falls back to search-based matching if the direct endpoint fails.
 
     Args:
-        artist_id: The artist's numeric ID (int or str).
-        artist_name: The artist's display name.
+        artist_id: The artist's numeric ID.
+        artist_name: The artist's display name (used in fallback).
 
     Returns:
         List of album dicts that belong to this artist.
     """
+    try:
+        # Use the upstream's direct /artist/?f={id} endpoint
+        res = await hifi_client.get_artist_albums(artist_id)
+        albums_data = res.get("albums", {}) if isinstance(res, dict) else {}
+        items = albums_data.get("items", [])
+        if items:
+            return items
+    except Exception:
+        pass
+
+    # Fallback: search by name and filter
     if not artist_name:
         return []
 
