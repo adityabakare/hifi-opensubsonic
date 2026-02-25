@@ -208,3 +208,50 @@ def extract_playlist_entry_data(track: dict) -> dict:
         "suffix": fmt_info.get("suffix", "flac"),
         "content_type": fmt_info.get("contentType", "audio/flac"),
     }
+
+
+async def fetch_artist_albums(artist_id, artist_name: str) -> list:
+    """
+    Search for albums by artist name and filter results to match the artist.
+    Matches by artist ID (exact) or artist name (case-insensitive).
+    If an album has no artist info, it is assumed to match and is backfilled.
+
+    Args:
+        artist_id: The artist's numeric ID (int or str).
+        artist_name: The artist's display name.
+
+    Returns:
+        List of album dicts that belong to this artist.
+    """
+    if not artist_name:
+        return []
+
+    s_res = await hifi_client.search_albums(artist_name)
+    root = s_res.get("data", s_res) if isinstance(s_res, dict) else {}
+    items = []
+    if "albums" in root and "items" in root["albums"]:
+        items = root["albums"]["items"]
+    elif "items" in root:
+        items = root["items"]
+
+    matched = []
+    for it in items:
+        aid = it.get("artist", {}).get("id")
+        aname = it.get("artist", {}).get("name")
+
+        match = False
+        if not aid and not aname:
+            if "artist" not in it:
+                it["artist"] = {}
+            it["artist"]["name"] = artist_name
+            it["artist"]["id"] = artist_id
+            match = True
+        elif aid and str(aid) == str(artist_id):
+            match = True
+        elif aname and artist_name and aname.lower() == artist_name.lower():
+            match = True
+
+        if match:
+            matched.append(it)
+
+    return matched

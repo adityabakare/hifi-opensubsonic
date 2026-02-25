@@ -7,7 +7,7 @@ import asyncio
 from app.config import settings
 from app.hifi_client import hifi_client
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, extract_track_metadata
+from app.routers.common import common_params, extract_track_metadata, fetch_artist_albums
 
 router = APIRouter()
 
@@ -62,40 +62,13 @@ async def get_music_directory(
     try:
         # Artist Folder -> Returns Albums
         if id.startswith("artist-"):
-            real_id = int(id.split("-")[1])
+            artist_id = int(id.split("-")[1])
             
-            info_res = await hifi_client.get_artist(real_id)
+            info_res = await hifi_client.get_artist(artist_id)
             artist_info = info_res.get("artist", {}) if isinstance(info_res, dict) else {}
             artist_name = artist_info.get("name")
             
-            albums_data = []
-            if artist_name:
-                s_res = await hifi_client.search_albums(artist_name)
-                root = s_res.get("data", s_res) if isinstance(s_res, dict) else {}
-                items = []
-                if "albums" in root and "items" in root["albums"]:
-                    items = root["albums"]["items"]
-                elif "items" in root:
-                    items = root["items"]
-                    
-                for it in items:
-                    aid = it.get("artist", {}).get("id")
-                    aname = it.get("artist", {}).get("name")
-                    
-                    match = False
-                    if not aid and not aname:
-                        if "artist" not in it:
-                            it["artist"] = {}
-                        it["artist"]["name"] = artist_name
-                        it["artist"]["id"] = real_id
-                        match = True
-                    elif aid and str(aid) == str(real_id):
-                        match = True
-                    elif aname and artist_name and aname.lower() == artist_name.lower():
-                        match = True
-
-                    if match:
-                        albums_data.append(it)
+            albums_data = await fetch_artist_albums(artist_id, artist_name)
             
             children = []
             for alb in albums_data:
@@ -170,44 +143,17 @@ async def get_artist(
     if not real_id:
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
     id = real_id
-    artist_id = id
     if id.startswith("artist-"):
-        artist_id = id.split("-")[1]
+        artist_id = int(id.split("-")[1])
+    else:
+        artist_id = int(id)
 
     try:
-        info_res = await hifi_client.get_artist(int(artist_id))
+        info_res = await hifi_client.get_artist(artist_id)
         artist_info = info_res.get("artist", {}) if isinstance(info_res, dict) else {}
         artist_name = artist_info.get("name")
         
-        albums_items = []
-        if artist_name:
-            s_res = await hifi_client.search_albums(artist_name)
-            
-            root = s_res.get("data", s_res) if isinstance(s_res, dict) else {}
-            items = []
-            if "albums" in root and "items" in root["albums"]:
-                items = root["albums"]["items"]
-            elif "items" in root:
-                items = root["items"]
-                
-            for it in items:
-                aid = it.get("artist", {}).get("id")
-                aname = it.get("artist", {}).get("name")
-                
-                match = False
-                if not aid and not aname:
-                    if "artist" not in it:
-                        it["artist"] = {}
-                    it["artist"]["name"] = artist_name
-                    it["artist"]["id"] = artist_id
-                    match = True
-                elif aid and str(aid) == str(artist_id):
-                    match = True
-                elif aname and artist_name and aname.lower() == artist_name.lower():
-                    match = True
-                    
-                if match:
-                    albums_items.append(it)
+        albums_items = await fetch_artist_albums(artist_id, artist_name)
                     
         albums = []
         for alb in albums_items:
