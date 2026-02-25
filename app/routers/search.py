@@ -110,8 +110,6 @@ async def search3(
                 })
 
         return SubsonicResponse.create({
-            "status": "ok",
-            "version": settings.API_VERSION,
             "searchResult3": {
                 "song": songs[songOffset : songOffset + songCount],
                 "artist": artists[artistOffset : artistOffset + artistCount],

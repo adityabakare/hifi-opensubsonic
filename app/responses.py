@@ -30,6 +30,10 @@ class SubsonicResponse:
         root = wrapped_data.get("subsonic-response")
         if isinstance(root, dict):
             # Only inject if not already present (to allow overrides if ever needed)
+            if "status" not in root:
+                root["status"] = "ok"
+            if "version" not in root:
+                root["version"] = settings.API_VERSION
             if "type" not in root:
                 root["type"] = "hifi-opensubsonic"
             if "serverVersion" not in root:

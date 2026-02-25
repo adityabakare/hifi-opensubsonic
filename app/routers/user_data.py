@@ -75,8 +75,6 @@ async def star(
     await session.commit()
     
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION
     }, fmt=f)
 
 
@@ -125,8 +123,6 @@ async def unstar(
     await session.commit()
     
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION
     }, fmt=f)
 
 
@@ -173,8 +169,6 @@ async def get_starred(
             songs.append(item)
     
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "starred2": {
             "artist": artists,
             "album": albums,
@@ -226,8 +220,6 @@ async def get_playlists(
         })
     
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "playlists": {"playlist": playlist_list}
     }, fmt=f)
 
@@ -303,8 +295,6 @@ async def get_playlist(
         })
     
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "playlist": {
             "id": str(pl.id),
             "name": pl.name,
@@ -407,8 +397,6 @@ async def create_playlist(
     await session.commit()
     
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "playlist": {
             "id": str(pl.id),
             "name": pl.name
@@ -455,8 +443,6 @@ async def delete_playlist(
     await session.commit()
     
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION
     }, fmt=f)
 
 
@@ -564,8 +550,6 @@ async def update_playlist(
     await session.commit()
     
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION
     }, fmt=f)
 
 
@@ -624,8 +608,6 @@ async def scrobble(
             logging.getLogger(__name__).warning(f"Failed to scrobble to Last.fm: {e}")
             
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION
     }, fmt=f)
 
 
@@ -652,6 +634,4 @@ async def set_rating(
     
     rating = rating_form if rating_form is not None else rating
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION
     }, fmt=commons["f"])

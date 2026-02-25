@@ -153,7 +153,11 @@ def extract_track_metadata(track: dict) -> dict:
         "track": track.get("trackNumber"),
         "discNumber": track.get("volumeNumber"),
         "year": year,
-        "replayGain": track.get("trackReplayGain") or track.get("replayGain"),
+        "replayGain": {
+            "trackGain": track.get("replayGain"),
+            "trackPeak": track.get("peak"),
+            "baseGain": 0,
+        },
         "parent": f"album-{track.get('album', {}).get('id')}",
         "isDir": False,
         "isVideo": False,

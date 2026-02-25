@@ -42,8 +42,6 @@ async def get_album_list(
     final_offset = offset_form if offset_form is not None else offset
     
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "albumList2": {
             "album": [],
             "type": final_type
@@ -57,8 +55,6 @@ async def get_album_list(
 @router.post("/rest/getGenres")
 async def get_genres(commons: dict = Depends(common_params)):
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "genres": {"genre": []}
     }, fmt=commons["f"])
 
@@ -70,8 +66,6 @@ async def get_artists(commons: dict = Depends(common_params)):
     Stub for getArtists. Returns empty index since we are a search-based proxy.
     """
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "artists": {
             "index": [],
             "ignoredArticles": "The El La Los Las Le Les"
@@ -88,8 +82,6 @@ async def get_indexes(commons: dict = Depends(common_params)):
     Stub for folder index. Returns empty.
     """
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "indexes": {
             "lastModified": 0,
             "index": [],
@@ -106,8 +98,6 @@ async def search2_stub(query: str, commons: dict = Depends(common_params)):
     Stub for legacy Search2.
     """
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "searchResult2": {
             "artist": [],
             "album": [],
@@ -122,8 +112,6 @@ async def search2_stub(query: str, commons: dict = Depends(common_params)):
 @router.get("/rest/getRandomSongs")
 async def get_random_songs_stub(commons: dict = Depends(common_params)):
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "randomSongs": {"song": []}
     }, fmt=commons["f"])
 
@@ -132,8 +120,6 @@ async def get_random_songs_stub(commons: dict = Depends(common_params)):
 @router.get("/rest/getNowPlaying")
 async def get_now_playing_stub(commons: dict = Depends(common_params)):
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "nowPlaying": {"entry": []}
     }, fmt=commons["f"])
 
@@ -144,7 +130,5 @@ async def get_now_playing_stub(commons: dict = Depends(common_params)):
 @router.get("/rest/getNewestPodcasts")
 async def get_podcasts_stub(commons: dict = Depends(common_params)):
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "podcasts": {"channel": []}
     }, fmt=commons["f"])

@@ -18,8 +18,6 @@ router = APIRouter()
 @router.post("/rest/getMusicFolders")
 async def get_music_folders(commons: dict = Depends(common_params)):
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "musicFolders": {
             "musicFolder": [
                 {"id": 1, "name": "Tidal"}
@@ -50,8 +48,6 @@ async def get_music_directory(
     # Virtual Root
     if id == "1" or id == "root":
         return SubsonicResponse.create({
-            "status": "ok",
-            "version": settings.API_VERSION,
             "directory": {
                 "id": id,
                 "name": "Tidal",
@@ -85,8 +81,6 @@ async def get_music_directory(
                 })
             
             return SubsonicResponse.create({
-                "status": "ok",
-                "version": settings.API_VERSION,
                 "directory": {
                     "id": id,
                     "name": "Artist Albums",
@@ -115,8 +109,6 @@ async def get_music_directory(
                 children.append(track_meta)
 
             return SubsonicResponse.create({
-                "status": "ok",
-                "version": settings.API_VERSION,
                 "directory": {
                     "id": id,
                     "name": data.get("data", {}).get("title"),
@@ -173,8 +165,6 @@ async def get_artist(
         cover_art_id = cover_uuid if cover_uuid else f"artist-{artist_id}"
 
         return SubsonicResponse.create({
-            "status": "ok",
-            "version": settings.API_VERSION,
             "artist": {
                 "id": f"artist-{artist_id}",
                 "name": artist_info.get("name"),
@@ -227,8 +217,6 @@ async def get_album_endpoint(
         cover_art_id = album_cover_uuid if album_cover_uuid else f"album-{album_id}"
         
         return SubsonicResponse.create({
-            "status": "ok",
-            "version": settings.API_VERSION,
             "album": {
                 "id": f"album-{album_id}",
                 "name": d.get("title"),
@@ -294,8 +282,6 @@ async def get_album_info2(
             large_url = f"{base_url}/rest/getCoverArt.view?id={local_id}&size=1280"
 
         return SubsonicResponse.create({
-            "status": "ok",
-            "version": settings.API_VERSION,
             "albumInfo": {
                 "notes": note_text,
                 "musicBrainzId": "",
@@ -404,8 +390,6 @@ async def get_artist_info_endpoint(
         }
 
         return SubsonicResponse.create({
-            "status": "ok",
-            "version": settings.API_VERSION,
             "artistInfo2": info
         }, fmt=f)
 

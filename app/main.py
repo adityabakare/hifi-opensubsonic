@@ -6,6 +6,8 @@ from app.config import settings
 from app.routers import system, browsing, search, media, stubs, user_data, lastfm
 from app.responses import SubsonicResponse, SubsonicException
 from app.auth import get_user_by_username, create_user
+from app.hifi_client import hifi_client
+from app.lastfm_client import lastfm_client
 from app.database import engine, get_session # for sessionmaker
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +35,10 @@ async def lifespan(app: FastAPI):
             await create_user(session, "admin", "admin", is_admin=True)
             
     yield
+
+    # Cleanup: close HTTP clients
+    await hifi_client.close()
+    await lastfm_client.client.aclose()
 
 app = FastAPI(
     title="Hifi-OpenSubsonic",

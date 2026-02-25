@@ -39,10 +39,7 @@ async def ping(commons: dict = Depends(common_params)):
     Subsonic Ping.
     Returns a simple OK status.
     """
-    return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION
-    }, fmt=commons["f"])
+    return SubsonicResponse.create({}, fmt=commons["f"])
 
 
 @router.get("/rest/getOpenSubsonicExtensions.view")
@@ -54,8 +51,6 @@ async def get_opensubsonic_extensions(commons: dict = Depends(common_params)):
     List supported OpenSubsonic extensions.
     """
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "openSubsonicExtensions": [
             {"name": "lyrics", "versions": [1]},
             {"name": "formPost", "versions": [1]}
@@ -69,8 +64,6 @@ async def get_license(commons: dict = Depends(common_params)):
     Mock license endpoint.
     """
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "license": {
             "valid": True,
             "email": "user@example.com",
@@ -85,8 +78,6 @@ async def get_scan_status(commons: dict = Depends(common_params)):
     Return scanning status (always false for this proxy).
     """
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "scanStatus": {
             "scanning": False,
             "count": 0
@@ -103,8 +94,6 @@ async def get_user(commons: dict = Depends(common_params)):
     """
     user = commons["user"]
     return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION,
         "user": {
             "username": user.username,
             "email": user.email or "user@example.com",
@@ -180,10 +169,7 @@ async def create_user_admin(
         return SubsonicResponse.error(0, "Generic error", fmt=f)
 
     # Return empty successful ack as per Subsonic API spec logic
-    return SubsonicResponse.create({
-        "status": "ok",
-        "version": settings.API_VERSION
-    }, fmt=f)
+    return SubsonicResponse.create({}, fmt=f)
 
 @router.post("/api/register")
 async def register_public_user(
