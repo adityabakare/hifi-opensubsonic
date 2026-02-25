@@ -12,7 +12,7 @@ import logging
 from app.config import settings
 from app.hifi_client import hifi_client
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, get_track_format
+from app.routers.common import common_params, extract_track_metadata
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -182,28 +182,7 @@ async def get_song(
         # Use /info endpoint which returns full track metadata
         data = await hifi_client.get_track_info(int(track_id))
         if data and "data" in data:
-            track = data["data"]
-            cover_uuid = track.get("album", {}).get("cover")
-            cover_art_id = cover_uuid if cover_uuid else f"album-{track.get('album', {}).get('id')}"
-
-            fmt_info = get_track_format(track)
-            song = {
-                "id": f"track-{track.get('id')}",
-                "title": track.get("title") or "Unknown Title",
-                "artist": track.get("artist", {}).get("name"),
-                "artistId": f"artist-{track.get('artist', {}).get('id')}",
-                "album": track.get("album", {}).get("title"),
-                "albumId": f"album-{track.get('album', {}).get('id')}",
-                "coverArt": cover_art_id, 
-                "duration": track.get("duration"),
-                "track": track.get("trackNumber"),
-                "discNumber": track.get("volumeNumber"),
-                "replayGain": track.get("trackReplayGain") or track.get("replayGain"),
-                "year": int(track.get("streamStartDate")[:4]) if track.get("streamStartDate") else None,
-                "isDir": False,
-                "isVideo": False,
-                **fmt_info
-            }
+            song = extract_track_metadata(data["data"])
             return SubsonicResponse.create({"song": song}, fmt=commons["f"])
     
     except Exception:

@@ -7,7 +7,7 @@ import asyncio
 from app.config import settings
 from app.hifi_client import hifi_client
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, get_track_format
+from app.routers.common import common_params, extract_track_metadata
 
 router = APIRouter()
 
@@ -130,28 +130,16 @@ async def get_music_directory(
             
             album_cover_uuid = data.get("data", {}).get("cover")
             
-            for item in items:
+            for entry in items:
+                item = entry.get("item", entry)
+                track_meta = extract_track_metadata(item)
+                # Override with album-level data
                 cover_uuid = item.get("album", {}).get("cover") or album_cover_uuid
-                cover_art_id = cover_uuid if cover_uuid else f"album-{real_id}"
-
-                fmt_info = get_track_format(item)
-                children.append({
-                    "id": f"track-{item['id']}",
-                    "parent": id,
-                    "title": item.get("title"),
-                    "artist": item.get("artist", {}).get("name"),
-                    "artistId": f"artist-{item.get('artist', {}).get('id')}",
-                    "album": data.get("data", {}).get("title"),
-                    "albumId": f"album-{real_id}",
-                    "isDir": False,
-                    "duration": item.get("duration"),
-                    "coverArt": cover_art_id,
-                    "track": item.get("trackNumber"),
-                    "discNumber": item.get("volumeNumber"),
-                    "replayGain": item.get("replayGain"),
-                    "year": int(item.get("streamStartDate")[:4]) if item.get("streamStartDate") else None,
-                    **fmt_info
-                })
+                track_meta["coverArt"] = cover_uuid if cover_uuid else f"album-{real_id}"
+                track_meta["parent"] = id
+                track_meta["album"] = data.get("data", {}).get("title") or track_meta["album"]
+                track_meta["albumId"] = f"album-{real_id}"
+                children.append(track_meta)
 
             return SubsonicResponse.create({
                 "status": "ok",
@@ -280,31 +268,15 @@ async def get_album_endpoint(
         
         for entry in items:
             item = entry.get("item", entry)
-            
+            track_meta = extract_track_metadata(item)
+            # Override with album-level data
             cover_uuid = item.get("album", {}).get("cover") or album_cover_uuid
-            cover_art_id = cover_uuid if cover_uuid else f"album-{album_id}"
-            
-            fmt_info = get_track_format(item)
-            songs.append({
-                "id": f"track-{item['id']}",
-                "parent": f"album-{album_id}",
-                "title": item.get("title") or "Unknown Title",
-                "artist": item.get("artist", {}).get("name"),
-                "artistId": f"artist-{item.get('artist', {}).get('id')}",
-                "album": d.get("title"),
-                "albumId": f"album-{album_id}",
-                "coverArt": cover_art_id, 
-                "duration": item.get("duration"),
-                "track": item.get("trackNumber"),
-                "discNumber": item.get("volumeNumber"),
-                "replayGain": item.get("replayGain"),
-                "year": int(item.get("streamStartDate")[:4]) if item.get("streamStartDate") else None,
-                "isDir": False,
-                "isVideo": False,
-                "type": "music",
-                "created": "2025-01-01T00:00:00.000Z",
-                **fmt_info
-            })
+            track_meta["coverArt"] = cover_uuid if cover_uuid else f"album-{album_id}"
+            track_meta["parent"] = f"album-{album_id}"
+            track_meta["album"] = d.get("title") or track_meta["album"]
+            track_meta["albumId"] = f"album-{album_id}"
+            track_meta["created"] = "2025-01-01T00:00:00.000Z"
+            songs.append(track_meta)
 
         cover_art_id = album_cover_uuid if album_cover_uuid else f"album-{album_id}"
         
