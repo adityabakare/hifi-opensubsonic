@@ -38,14 +38,14 @@ class SearchResult3(BaseModel):
     # Simplified for now
 
 from sqlmodel import Field, SQLModel
-from datetime import datetime
+from datetime import datetime, timezone
 
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(index=True, unique=True)
     password_hash: str
     email: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_admin: bool = False
     lastfm_session_key: Optional[str] = None
 
@@ -56,7 +56,7 @@ class Star(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True)
     item_id: str = Field(index=True)  # "track-123", "album-456", "artist-789"
     item_type: str  # "song", "album", "artist"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Playlist(SQLModel, table=True):
@@ -66,8 +66,8 @@ class Playlist(SQLModel, table=True):
     name: str
     comment: Optional[str] = ""
     public: bool = False
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    changed_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    changed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class PlaylistEntry(SQLModel, table=True):

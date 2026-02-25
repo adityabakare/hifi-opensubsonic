@@ -1,39 +1,17 @@
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 from pydantic import BaseModel
-import jwt
 
 from app.config import settings
 from app.database import get_session
 from app.lastfm_client import lastfm_client
 from app.models import User
-from app.auth import get_user_by_username
+from app.auth import get_current_user
 
 router = APIRouter()
 
 class TokenRequest(BaseModel):
     token: str
-
-async def get_current_user(request: Request, session: AsyncSession = Depends(get_session)):
-    """Helper to get current user based on auth_token cookie."""
-    token = request.cookies.get("auth_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-        
-    try:
-        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
-        username = payload.get("sub")
-        if not username:
-            raise HTTPException(status_code=401, detail="Invalid token")
-            
-        user = await get_user_by_username(session, username)
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-            
-        return user
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 @router.get("/api/lastfm/auth-url")
 async def get_auth_url(callback_url: str = ""):

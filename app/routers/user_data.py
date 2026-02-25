@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query, Depends, Form, BackgroundTasks
 from sqlalchemy.future import select
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 
 from app.config import settings
@@ -354,7 +354,7 @@ async def create_playlist(
         
         if name:
             pl.name = name
-        pl.changed_at = datetime.utcnow()
+        pl.changed_at = datetime.now(timezone.utc)
     else:
         # Create new playlist
         if not name:
@@ -510,7 +510,7 @@ async def update_playlist(
         pl.comment = comment
     if public is not None:
         pl.public = public
-    pl.changed_at = datetime.utcnow()
+    pl.changed_at = datetime.now(timezone.utc)
     
     # Remove songs by index
     if songIndexToRemove:
