@@ -2,6 +2,7 @@
 Media endpoints for streaming and cover art.
 """
 from fastapi import APIRouter, Query, Depends, Form
+import re
 from fastapi.responses import RedirectResponse, Response
 from typing import Optional
 import base64
@@ -20,15 +21,23 @@ logger = logging.getLogger(__name__)
 
 @router.get("/rest/getCoverArt.view")
 @router.get("/rest/getCoverArt")
+@router.post("/rest/getCoverArt.view")
+@router.post("/rest/getCoverArt")
 async def get_cover_art(
-    id: str,
+    id: str = Query(None),
     size: Optional[int] = Query(None),
+    id_form: str = Form(None, alias="id"),
+    size_form: Optional[int] = Form(None, alias="size"),
     commons: dict = Depends(common_params)
 ):
-    # Map requested size to Tidal sizes
-    req_size = size if size else 0
-    
-    target_size = 1280
+
+    real_id = id or id_form
+    if not real_id:
+        return SubsonicResponse.error(10, "Required parameter is missing", fmt=commons["f"])
+
+    req_size = (size_form if size_form is not None else size) or 0
+
+    target_size = 750
     if req_size > 0:
         if req_size <= 80:
             target_size = 80
@@ -42,61 +51,73 @@ async def get_cover_art(
             target_size = 750
         else:
             target_size = 1280
+
+    # --- Parse the cover art ID ---
+    # Supported formats:
+    #   UUID:                 b4579672-5b91-4679-a27a-288f097a4da5
+    #   Our prefixed:         artist-8812, album-120267
+    #   Client prefixed:      ar-artist-6239286_0, al-album-120267_0
+    #   Plain numeric:        120267
+
+    uuid_pattern = re.compile(
+        r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE
+    )
+
+    clean_id = real_id
+    type_hint = "album"  # default
+
+    # Check if it's already a UUID
+    if uuid_pattern.match(clean_id):
+        final_id = clean_id.replace("-", "/")
     else:
-        target_size = 750
-    
-    # Detect type from prefix
-    type_hint = "album"
-    clean_id = id
-    for prefix in ["album-", "track-", "artist-"]:
-        if clean_id.startswith(prefix):
-            type_hint = prefix.replace("-", "")
-            clean_id = clean_id[len(prefix):]
-            break
-            
-    final_id = clean_id.replace("-", "/") 
-    
-    # If numeric ID (legacy or prefixed), resolve to UUID
-    if "-" not in clean_id:
+        # Extract numeric ID and type hint from various prefix formats
+        # Handles: "ar-artist-123_0", "artist-123", "al-album-456_0", "album-456", "track-789", "123"
+        if "artist" in clean_id:
+            type_hint = "artist"
+        elif "album" in clean_id or "al-" in clean_id:
+            type_hint = "album"
+        elif "track" in clean_id:
+            type_hint = "track"
+
+        # Extract the numeric portion
+        nums = re.findall(r'\d+', clean_id)
+        numeric_id = nums[0] if nums else None
+
+        if not numeric_id:
+            return SubsonicResponse.error(70, "Invalid cover art ID", fmt=commons["f"])
+
+        # Resolve numeric ID to UUID via upstream API
         resolved_uuid = None
-         
-        async def try_album():
-            try:
-                alb = await hifi_client.get_album(clean_id)
-                if alb and "cover" in alb:
-                    return alb["cover"]
-            except Exception:
-                return None
-             
-        async def try_artist():
-            try:
-                art = await hifi_client.get_artist(clean_id)
-                if art and "picture" in art:
-                    return art["picture"]
-            except Exception:
-                return None
 
         if type_hint == "artist":
-            resolved_uuid = await try_artist()
-        elif type_hint == "album":
-            resolved_uuid = await try_album()
+            try:
+                art = await hifi_client.get_artist(int(numeric_id))
+                artist_data = art.get("artist", {}) if isinstance(art, dict) else {}
+                resolved_uuid = artist_data.get("picture")
+            except Exception:
+                pass
         else:
-            resolved_uuid = await try_album()
-            if not resolved_uuid:
-                resolved_uuid = await try_artist()
-         
-        if resolved_uuid:
-            final_id = resolved_uuid.replace("-", "/")
+            try:
+                alb = await hifi_client.get_album(int(numeric_id))
+                album_data = alb.get("data", {}) if isinstance(alb, dict) else {}
+                resolved_uuid = album_data.get("cover")
+            except Exception:
+                pass
+
+        if not resolved_uuid:
+            return SubsonicResponse.error(70, "Cover art not found", fmt=commons["f"])
+
+        final_id = resolved_uuid.replace("-", "/")
 
     tidal_url = f"https://resources.tidal.com/images/{final_id}/{target_size}x{target_size}.jpg"
-    
+
     try:
         resp = await hifi_client.client.get(tidal_url, timeout=10.0)
         if resp.status_code != 200:
             return SubsonicResponse.error(70, "Cover art inaccessible", fmt=commons["f"])
-        
+
         return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"))
-        
+
     except Exception:
         return SubsonicResponse.error(70, "Failed to fetch cover art", fmt=commons["f"])
 

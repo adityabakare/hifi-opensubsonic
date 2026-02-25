@@ -299,8 +299,12 @@ async def get_album_info2(
 
 @router.get("/rest/getArtistInfo.view")
 @router.get("/rest/getArtistInfo")
+@router.post("/rest/getArtistInfo.view")
+@router.post("/rest/getArtistInfo")
 @router.get("/rest/getArtistInfo2.view")
 @router.get("/rest/getArtistInfo2")
+@router.post("/rest/getArtistInfo2.view")
+@router.post("/rest/getArtistInfo2")
 async def get_artist_info_endpoint(
     id: str = Query(None),
     count: int = Query(20),
