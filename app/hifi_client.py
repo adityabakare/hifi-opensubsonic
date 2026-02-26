@@ -59,9 +59,6 @@ class HifiClient:
 
     # --- Search ---
 
-    async def search(self, query: str) -> Dict[str, Any]:
-        return await self._get("/search/", params={"s": query})
-
     async def search_tracks(self, query: str):
         return await self._get("/search/", params={"s": query})
 
@@ -95,9 +92,6 @@ class HifiClient:
         Uses /info/ endpoint which returns complete track information.
         """
         return await self._get("/info/", params={"id": track_id})
-
-    async def get_stream_url(self, track_id: int) -> Optional[str]:
-        return await self.get_track(track_id)
 
     async def get_lyrics(self, track_id: int):
         """Get lyrics for a track ID."""

@@ -14,7 +14,7 @@ from app.config import settings
 from app.database import get_session
 from app.models import Star, Playlist, PlaylistEntry
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, extract_playlist_entry_data, extract_track_metadata, fetch_track_info_safe
+from app.routers.common import common_params, extract_playlist_entry_data, extract_track_metadata, fetch_track_info_safe, add_tracks_to_playlist, resolve_id
 from app.hifi_client import hifi_client
 from app.lastfm_client import lastfm_client
 import time as pytime
@@ -166,12 +166,15 @@ async def get_starred(
     
     # Fetch all metadata in parallel
     async def fetch_song(star):
-        numeric_id = star.item_id.split("-")[1] if star.item_id.startswith("track-") else star.item_id
-        data = await fetch_track_info_safe(int(numeric_id))
-        if data and "data" in data:
-            song = extract_track_metadata(data["data"])
-            song["starred"] = star.created_at.isoformat() + "Z"
-            return song
+        try:
+            numeric_id = resolve_id(star.item_id)
+            data = await fetch_track_info_safe(numeric_id)
+            if data and "data" in data:
+                song = extract_track_metadata(data["data"])
+                song["starred"] = star.created_at.isoformat() + "Z"
+                return song
+        except ValueError:
+            pass
         return {
             "id": star.item_id, "title": star.item_id,
             "artist": "Unknown", "album": "Unknown",
@@ -179,9 +182,9 @@ async def get_starred(
         }
     
     async def fetch_album(star):
-        numeric_id = star.item_id.split("-")[1] if star.item_id.startswith("album-") else star.item_id
         try:
-            data = await hifi_client.get_album(int(numeric_id))
+            numeric_id = resolve_id(star.item_id)
+            data = await hifi_client.get_album(numeric_id)
             d = data.get("data", {}) if data else {}
             if d:
                 cover_uuid = d.get("cover")
@@ -189,7 +192,7 @@ async def get_starred(
                     "id": star.item_id,
                     "name": d.get("title") or star.item_id,
                     "artist": d.get("artist", {}).get("name") or "Unknown",
-                    "artistId": f"artist-{d.get('artist', {}).get('id')}",
+                    "artistId": f"ar-{d.get('artist', {}).get('id')}",
                     "year": int(d.get("releaseDate")[:4]) if d.get("releaseDate") else None,
                     "songCount": d.get("numberOfTracks"),
                     "coverArt": cover_uuid if cover_uuid else star.item_id,
@@ -203,9 +206,9 @@ async def get_starred(
         }
     
     async def fetch_artist(star):
-        numeric_id = star.item_id.split("-")[1] if star.item_id.startswith("artist-") else star.item_id
         try:
-            data = await hifi_client.get_artist(int(numeric_id))
+            numeric_id = resolve_id(star.item_id)
+            data = await hifi_client.get_artist(numeric_id)
             artist_data = data.get("artist", {}) if isinstance(data, dict) else {}
             if artist_data:
                 cover_uuid = artist_data.get("picture")
@@ -332,12 +335,12 @@ async def get_playlist(
         
         songs.append({
             "id": entry.track_id,
-            "parent": entry.album_id or f"album-{entry.track_id}",
+            "parent": entry.album_id or f"al-{entry.track_id}",
             "title": entry.title or entry.track_id,
             "artist": entry.artist or "Unknown Artist",
-            "artistId": entry.artist_id or "artist-0",
+            "artistId": entry.artist_id or "ar-0",
             "album": entry.album or "Unknown Album",
-            "albumId": entry.album_id or "album-0",
+            "albumId": entry.album_id or "al-0",
             "coverArt": entry.cover_art or entry.album_id or entry.track_id,
             "duration": duration,
             "isDir": entry.is_dir or False,
@@ -424,35 +427,7 @@ async def create_playlist(
         await session.flush()  # Get the ID
     # Add songs if provided
     if songId:
-        
-        # Get current max position
-        pos_stmt = select(PlaylistEntry).where(PlaylistEntry.playlist_id == pl.id)
-        pos_result = await session.execute(pos_stmt)
-        existing = pos_result.scalars().all()
-        max_pos = max([e.position for e in existing], default=-1)
-        
-        # Normalize track IDs and fetch all metadata in parallel
-        numeric_ids = [
-            (track_id, track_id.split("-")[1] if track_id.startswith("track-") else track_id)
-            for track_id in songId
-        ]
-        
-        results = await asyncio.gather(*[fetch_track_info_safe(int(nid)) for _, nid in numeric_ids])
-        
-        for i, ((track_id, numeric_id), data) in enumerate(zip(numeric_ids, results)):
-            entry_data = {
-                "track_id": track_id if track_id.startswith("track-") else f"track-{track_id}",
-                "title": f"Track {numeric_id}",
-            }
-            if data and "data" in data:
-                entry_data = extract_playlist_entry_data(data["data"])
-            
-            entry = PlaylistEntry(
-                playlist_id=pl.id,
-                position=max_pos + 1 + i,
-                **entry_data
-            )
-            session.add(entry)
+        await add_tracks_to_playlist(session, pl, songId)
     
     await session.commit()
     
@@ -578,33 +553,7 @@ async def update_playlist(
     
     # Add songs
     if songIdToAdd:
-        pos_stmt = select(PlaylistEntry).where(PlaylistEntry.playlist_id == pl.id)
-        pos_result = await session.execute(pos_stmt)
-        existing = pos_result.scalars().all()
-        max_pos = max([e.position for e in existing], default=-1)
-        
-        # Normalize track IDs and fetch all metadata in parallel
-        numeric_ids = [
-            (track_id, track_id.split("-")[1] if track_id.startswith("track-") else track_id)
-            for track_id in songIdToAdd
-        ]
-        
-        results = await asyncio.gather(*[fetch_track_info_safe(int(nid)) for _, nid in numeric_ids])
-        
-        for i, ((track_id, numeric_id), data) in enumerate(zip(numeric_ids, results)):
-            entry_data = {
-                "track_id": track_id if track_id.startswith("track-") else f"track-{track_id}",
-                "title": f"Track {numeric_id}",
-            }
-            if data and "data" in data:
-                entry_data = extract_playlist_entry_data(data["data"])
-            
-            entry = PlaylistEntry(
-                playlist_id=pl.id,
-                position=max_pos + 1 + i,
-                **entry_data
-            )
-            session.add(entry)
+        await add_tracks_to_playlist(session, pl, songIdToAdd)
     
     await session.commit()
     
@@ -643,10 +592,10 @@ async def scrobble(
     submission_val = submission_form if (submission_form is not None) else submission
     
     if submission_val and user.lastfm_session_key:
-        track_id = id.split("-")[1] if id.startswith("track-") else id
         try:
+            track_id = resolve_id(id)
             # Fetch track metadata to scrobble
-            data = await hifi_client.get_track_info(int(track_id))
+            data = await hifi_client.get_track_info(track_id)
             if data and "data" in data:
                 track = data["data"]
                 artist = track.get("artist", {}).get("name")

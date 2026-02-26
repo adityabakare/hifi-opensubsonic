@@ -13,7 +13,7 @@ import logging
 from app.config import settings
 from app.hifi_client import hifi_client
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, extract_track_metadata, fetch_track_info_safe
+from app.routers.common import common_params, extract_track_metadata, fetch_track_info_safe, resolve_id
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -52,13 +52,6 @@ async def get_cover_art(
         else:
             target_size = 1280
 
-    # --- Parse the cover art ID ---
-    # Supported formats:
-    #   UUID:                 b4579672-5b91-4679-a27a-288f097a4da5
-    #   Our prefixed:         artist-8812, album-120267
-    #   Client prefixed:      ar-artist-6239286_0, al-album-120267_0
-    #   Plain numeric:        120267
-
     uuid_pattern = re.compile(
         r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE
     )
@@ -71,19 +64,16 @@ async def get_cover_art(
         final_id = clean_id.replace("-", "/")
     else:
         # Extract numeric ID and type hint from various prefix formats
-        # Handles: "ar-artist-123_0", "artist-123", "al-album-456_0", "album-456", "track-789", "123"
-        if "artist" in clean_id:
+        if clean_id.startswith("ar-"):
             type_hint = "artist"
-        elif "album" in clean_id or "al-" in clean_id:
+        elif clean_id.startswith("al-"):
             type_hint = "album"
-        elif "track" in clean_id:
+        elif clean_id.startswith("tr-"):
             type_hint = "track"
 
-        # Extract the numeric portion
-        nums = re.findall(r'\d+', clean_id)
-        numeric_id = nums[0] if nums else None
-
-        if not numeric_id:
+        try:
+            numeric_id = resolve_id(clean_id)
+        except ValueError:
             return SubsonicResponse.error(70, "Invalid cover art ID", fmt=commons["f"])
 
         # Resolve numeric ID to UUID via upstream API
@@ -91,14 +81,14 @@ async def get_cover_art(
 
         if type_hint == "artist":
             try:
-                art = await hifi_client.get_artist(int(numeric_id))
+                art = await hifi_client.get_artist(numeric_id)
                 artist_data = art.get("artist", {}) if isinstance(art, dict) else {}
                 resolved_uuid = artist_data.get("picture")
             except Exception:
                 pass
         else:
             try:
-                alb = await hifi_client.get_album(int(numeric_id))
+                alb = await hifi_client.get_album(numeric_id)
                 album_data = alb.get("data", {}) if isinstance(alb, dict) else {}
                 resolved_uuid = album_data.get("cover")
             except Exception:
@@ -128,9 +118,10 @@ async def stream(
     Streams the media.
     Decodes Tidal manifest and redirects to the direct stream URL.
     """
-    track_id = id
-    if id.startswith("track-"):
-        track_id = id.split("-")[1]
+    try:
+        track_id = resolve_id(id)
+    except ValueError:
+        return SubsonicResponse.error(70, "Invalid stream ID", fmt=commons["f"])
 
     # Map maxBitRate to Tidal qualities
     # Tidal qualities: LOW (~96kbps), HIGH (~320kbps), LOSSLESS (FLAC), HI_RES_LOSSLESS
@@ -141,8 +132,12 @@ async def stream(
         elif maxBitRate <= 320:
             quality = "HIGH"
             
+    if format and format.lower() in ("m4a", "mp3"):
+        # Forcing a lossy format
+        quality = "HIGH"
+
     try:
-        data = await hifi_client.get_track(int(track_id), quality=quality)
+        data = await hifi_client.get_track(track_id, quality=quality)
         if not data or "data" not in data:
             return SubsonicResponse.error(70, "Stream not found", fmt=commons["f"])
              
@@ -176,8 +171,7 @@ async def stream(
 
             except Exception as e:
                 logger.warning(f"Manifest decode error: {e}")
-                pass
-             
+                
     except Exception as e:
         logger.error(f"Stream error: {e}")
         
@@ -197,20 +191,21 @@ async def get_song(
     if not real_id:
         return SubsonicResponse.error(10, "Required parameter is missing, id not found", fmt=commons["f"])
     
-    id = real_id
-    track_id = id
-    if id.startswith("track-"):
-        track_id = id.split("-")[1]
+    try:
+        track_id = resolve_id(real_id)
+    except ValueError:
+        return SubsonicResponse.error(70, "Song not found", fmt=commons["f"])
     
     try:
         # Use /info endpoint which returns full track metadata
         data = await hifi_client.get_track_info(int(track_id))
         if data and "data" in data:
-            song = extract_track_metadata(data["data"])
-            return SubsonicResponse.create({"song": song}, fmt=commons["f"])
-    
-    except Exception:
-        pass
+            track = extract_track_metadata(data["data"])
+            return SubsonicResponse.create({
+                "song": track
+            }, fmt=commons["f"])
+    except Exception as e:
+        logger.error(f"Failed to get song {track_id}: {e}")
         
     return SubsonicResponse.error(70, "Song not found", fmt=commons["f"])
 
@@ -224,15 +219,16 @@ async def get_lyrics_by_song_id(
     OpenSubsonic extension: Get structured lyrics by song ID.
     Returns lyricsList with structuredLyrics per the OpenSubsonic spec.
     """
-    track_id = id
-    if id.startswith("track-"):
-        track_id = id.split("-")[1]
+    try:
+        track_numeric_id = resolve_id(id)
+    except ValueError:
+        return SubsonicResponse.error(70, "Invalid song ID", fmt=commons["f"])
     
     try:
         # Fetch lyrics and track info in parallel
         lyrics_data, track_data = await asyncio.gather(
-            hifi_client.get_lyrics(int(track_id)),
-            fetch_track_info_safe(int(track_id)),
+            hifi_client.get_lyrics(track_numeric_id),
+            fetch_track_info_safe(track_numeric_id),
         )
         
         if not lyrics_data or "lyrics" not in lyrics_data:

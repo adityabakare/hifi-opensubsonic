@@ -7,7 +7,7 @@ import asyncio
 from app.config import settings
 from app.hifi_client import hifi_client
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, extract_track_metadata, fetch_artist_albums
+from app.routers.common import common_params, extract_track_metadata, fetch_artist_albums, resolve_id
 
 router = APIRouter()
 
@@ -57,8 +57,8 @@ async def get_music_directory(
     
     try:
         # Artist Folder -> Returns Albums
-        if id.startswith("artist-"):
-            artist_id = int(id.split("-")[1])
+        if id.startswith("artist-") or id.startswith("ar-"):
+            artist_id = resolve_id(id)
             
             # Fetch artist info and albums concurrently
             info_res, albums_data = await asyncio.gather(
@@ -70,10 +70,10 @@ async def get_music_directory(
             children = []
             for alb in albums_data:
                 cover_uuid = alb.get("cover")
-                cover_art_id = cover_uuid if cover_uuid else f"album-{alb['id']}"
+                cover_art_id = cover_uuid if cover_uuid else f"al-{alb['id']}"
                 
                 children.append({
-                    "id": f"album-{alb['id']}",
+                    "id": f"al-{alb['id']}",
                     "parent": id,
                     "title": alb.get("title"),
                     "artist": alb.get("artist", {}).get("name"),
@@ -90,8 +90,8 @@ async def get_music_directory(
             }, fmt=f)
             
         # Album Folder -> Returns Tracks
-        elif id.startswith("album-"):
-            real_id = int(id.split("-")[1])
+        elif id.startswith("album-") or id.startswith("al-"):
+            real_id = resolve_id(id)
             data = await hifi_client.get_album(real_id)
             items = data.get("data", {}).get("items", [])
             children = []
@@ -103,10 +103,10 @@ async def get_music_directory(
                 track_meta = extract_track_metadata(item)
                 # Override with album-level data
                 cover_uuid = item.get("album", {}).get("cover") or album_cover_uuid
-                track_meta["coverArt"] = cover_uuid if cover_uuid else f"album-{real_id}"
+                track_meta["coverArt"] = cover_uuid if cover_uuid else f"al-{real_id}"
                 track_meta["parent"] = id
                 track_meta["album"] = data.get("data", {}).get("title") or track_meta["album"]
-                track_meta["albumId"] = f"album-{real_id}"
+                track_meta["albumId"] = f"al-{real_id}"
                 children.append(track_meta)
 
             return SubsonicResponse.create({
@@ -136,10 +136,11 @@ async def get_artist(
     if not real_id:
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
     id = real_id
-    if id.startswith("artist-"):
-        artist_id = int(id.split("-")[1])
-    else:
-        artist_id = int(id)
+    
+    try:
+        artist_id = resolve_id(id)
+    except ValueError:
+        return SubsonicResponse.error(70, "Artist not found", fmt=f)
 
     try:
         # Fetch artist info and albums concurrently
@@ -152,9 +153,9 @@ async def get_artist(
         albums = []
         for alb in albums_items:
             cover_uuid = alb.get("cover")
-            cover_art_id = cover_uuid if cover_uuid else f"album-{alb['id']}"
+            cover_art_id = cover_uuid if cover_uuid else f"al-{alb['id']}"
             albums.append({
-                "id": f"album-{alb['id']}",
+                "id": f"al-{alb['id']}",
                 "name": alb.get("title"),
                 "artist": alb.get("artist", {}).get("name"),
                 "year": int(alb.get("releaseDate")[:4]) if alb.get("releaseDate") else None,
@@ -164,11 +165,11 @@ async def get_artist(
             })
 
         cover_uuid = artist_info.get("picture")
-        cover_art_id = cover_uuid if cover_uuid else f"artist-{artist_id}"
+        cover_art_id = cover_uuid if cover_uuid else f"ar-{artist_id}"
 
         return SubsonicResponse.create({
             "artist": {
-                "id": f"artist-{artist_id}",
+                "id": f"ar-{artist_id}",
                 "name": artist_info.get("name"),
                 "coverArt": cover_art_id, 
                 "albumCount": len(albums),
@@ -191,13 +192,14 @@ async def get_album_endpoint(
     real_id = id or id_form
     if not real_id:
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
-    id = real_id
-    album_id = id
-    if id.startswith("album-"):
-        album_id = id.split("-")[1]
+    
+    try:
+        album_id = resolve_id(real_id)
+    except ValueError:
+        return SubsonicResponse.error(70, "Album not found", fmt=f)
 
     try:
-        data = await hifi_client.get_album(int(album_id))
+        data = await hifi_client.get_album(album_id)
         d = data.get("data", {}) if data else {}
         
         items = d.get("items", [])
@@ -209,21 +211,21 @@ async def get_album_endpoint(
             track_meta = extract_track_metadata(item)
             # Override with album-level data
             cover_uuid = item.get("album", {}).get("cover") or album_cover_uuid
-            track_meta["coverArt"] = cover_uuid if cover_uuid else f"album-{album_id}"
-            track_meta["parent"] = f"album-{album_id}"
+            track_meta["coverArt"] = cover_uuid if cover_uuid else f"al-{album_id}"
+            track_meta["parent"] = f"al-{album_id}"
             track_meta["album"] = d.get("title") or track_meta["album"]
-            track_meta["albumId"] = f"album-{album_id}"
+            track_meta["albumId"] = f"al-{album_id}"
             track_meta["created"] = "2025-01-01T00:00:00.000Z"
             songs.append(track_meta)
 
-        cover_art_id = album_cover_uuid if album_cover_uuid else f"album-{album_id}"
+        cover_art_id = album_cover_uuid if album_cover_uuid else f"al-{album_id}"
         
         return SubsonicResponse.create({
             "album": {
-                "id": f"album-{album_id}",
+                "id": f"al-{album_id}",
                 "name": d.get("title"),
                 "artist": d.get("artist", {}).get("name"),
-                "artistId": f"artist-{d.get('artist', {}).get('id')}",
+                "artistId": f"ar-{d.get('artist', {}).get('id')}",
                 "year": int(d.get("releaseDate")[:4]) if d.get("releaseDate") else None,
                 "songCount": d.get("numberOfTracks"),
                 "duration": sum(s.get("duration", 0) for s in songs),
@@ -250,13 +252,14 @@ async def get_album_info2(
     real_id = id or id_form
     if not real_id:
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
-    id = real_id
-    album_id = id
-    if id.startswith("album-"):
-        album_id = id.split("-")[1]
+        
+    try:
+        album_id = resolve_id(real_id)
+    except ValueError:
+        return SubsonicResponse.error(70, "Album not found", fmt=f)
 
     try:
-        data = await hifi_client.get_album(int(album_id))
+        data = await hifi_client.get_album(album_id)
         d = data.get("data", {}) if data else {}
         
         if not d:
@@ -327,19 +330,16 @@ async def get_artist_info_endpoint(
     
     count = count_form if count_form is not None else count
     
-    # Normalize ID
-    artist_id = id
-    if id.startswith("artist-"):
-        artist_id = id.split("-")[1]
-    
-    if not artist_id.isdigit():
+    try:
+        artist_id = resolve_id(real_id)
+    except ValueError:
         return SubsonicResponse.error(70, "Artist not found", fmt=f)
     
     try:
         # Fetch artist data and similar artists in parallel
         artist_res, similar_res = await asyncio.gather(
-            hifi_client.get_artist(int(artist_id)),
-            hifi_client.get_similar_artists(int(artist_id)),
+            hifi_client.get_artist(artist_id),
+            hifi_client.get_similar_artists(artist_id),
             return_exceptions=True
         )
 
@@ -377,9 +377,9 @@ async def get_artist_info_endpoint(
                         s_cover = f"https://resources.tidal.com/images/{slug}/320x320.jpg"
 
                     similar_artists.append({
-                        "id": f"artist-{sid}",
+                        "id": f"ar-{sid}",
                         "name": sname,
-                        "coverArt": f"artist-{sid}", # Fallback or actual ID
+                        "coverArt": f"ar-{sid}", # Fallback or actual ID
                         "albumCount": 0, # Not provided by similar endpoint
                         "imageUrl": s_cover
                     })

@@ -20,6 +20,29 @@ async def fetch_track_info_safe(numeric_id: int):
         return None
 
 
+def resolve_id(id_string: str) -> int:
+    """
+    Standardize parsing of OpenSubsonic IDs into raw upstream numeric IDs.
+    Handles plain numbers (123) and Subsonic client prefixes/suffixes (ar-artist-123_0, al-album-456_0).
+    
+    Raises ValueError if the ID cannot be parsed to an integer.
+    """
+    if not id_string:
+        raise ValueError("ID cannot be empty")
+        
+    s = str(id_string)
+    
+    # Strip client prefixes (ar-, al-, etc.)
+    while s.startswith("ar-") or s.startswith("al-") or s.startswith("tr-"):
+        s = s[3:]
+    
+    # Strip _0 suffix from clients
+    if s.endswith("_0"):
+        s = s[:-2]
+        
+    return int(s)
+
+
 async def common_params(
     u: Optional[str] = Query(None),
     p: Optional[str] = Query(None),
@@ -134,7 +157,7 @@ def extract_track_metadata(track: dict) -> dict:
     
     # Cover art ID (prefer UUID, fallback to album-{id})
     cover_uuid = track.get("album", {}).get("cover")
-    cover_art_id = cover_uuid if cover_uuid else f"album-{track.get('album', {}).get('id')}"
+    cover_art_id = cover_uuid if cover_uuid else f"al-{track.get('album', {}).get('id')}"
     
     # Extract year from streamStartDate or releaseDate
     year = None
@@ -150,12 +173,12 @@ def extract_track_metadata(track: dict) -> dict:
             pass
     
     return {
-        "id": f"track-{track.get('id')}",
+        "id": f"tr-{track.get('id')}",
         "title": track.get("title") or "Unknown Title",
         "artist": track.get("artist", {}).get("name") or "Unknown Artist",
-        "artistId": f"artist-{track.get('artist', {}).get('id')}",
+        "artistId": f"ar-{track.get('artist', {}).get('id')}",
         "album": track.get("album", {}).get("title") or "Unknown Album",
-        "albumId": f"album-{track.get('album', {}).get('id')}",
+        "albumId": f"al-{track.get('album', {}).get('id')}",
         "coverArt": cover_art_id,
         "duration": track.get("duration") or 0,
         "track": track.get("trackNumber"),
@@ -166,7 +189,7 @@ def extract_track_metadata(track: dict) -> dict:
             "trackPeak": track.get("peak"),
             "baseGain": 0,
         },
-        "parent": f"album-{track.get('album', {}).get('id')}",
+        "parent": f"al-{track.get('album', {}).get('id')}",
         "isDir": False,
         "isVideo": False,
         "type": "music",
@@ -185,40 +208,25 @@ def extract_playlist_entry_data(track: dict) -> dict:
     Returns:
         dict: PlaylistEntry-compatible metadata (snake_case keys)
     """
-    fmt_info = get_track_format(track)
-    
-    cover_uuid = track.get("album", {}).get("cover")
-    cover_art_id = cover_uuid if cover_uuid else f"album-{track.get('album', {}).get('id')}"
-    
-    year = None
-    if track.get("streamStartDate"):
-        try:
-            year = int(track.get("streamStartDate")[:4])
-        except:
-            pass
-    elif track.get("releaseDate"):
-        try:
-            year = int(track.get("releaseDate")[:4])
-        except:
-            pass
+    base = extract_track_metadata(track)
     
     return {
-        "track_id": f"track-{track.get('id')}",
-        "title": track.get("title") or "Unknown Title",
-        "artist": track.get("artist", {}).get("name") or "Unknown Artist",
-        "artist_id": f"artist-{track.get('artist', {}).get('id')}",
-        "album": track.get("album", {}).get("title") or "Unknown Album",
-        "album_id": f"album-{track.get('album', {}).get('id')}",
-        "cover_art": cover_art_id,
-        "duration": track.get("duration") or 0,
-        "track_number": track.get("trackNumber"),
-        "disc_number": track.get("volumeNumber"),
-        "year": year,
-        "bit_rate": fmt_info.get("bitRate", 1411),
-        "bit_depth": fmt_info.get("bitDepth", 16),
-        "sampling_rate": fmt_info.get("samplingRate", 44100),
-        "suffix": fmt_info.get("suffix", "flac"),
-        "content_type": fmt_info.get("contentType", "audio/flac"),
+        "track_id": base["id"],
+        "title": base["title"],
+        "artist": base["artist"],
+        "artist_id": base["artistId"],
+        "album": base["album"],
+        "album_id": base["albumId"],
+        "cover_art": base["coverArt"],
+        "duration": base["duration"],
+        "track_number": base["track"],
+        "disc_number": base["discNumber"],
+        "year": base["year"],
+        "bit_rate": base.get("bitRate", 1411),
+        "bit_depth": base.get("bitDepth", 16),
+        "sampling_rate": base.get("samplingRate", 44100),
+        "suffix": base.get("suffix", "flac"),
+        "content_type": base.get("contentType", "audio/flac"),
     }
 
 
@@ -327,3 +335,49 @@ async def fetch_artist_albums(artist_id: int, artist_name: str = "") -> list:
             matched.append(it)
 
     return preference_deduplicator(matched)
+
+
+async def add_tracks_to_playlist(session, pl, track_ids: list[str]) -> None:
+    """
+    Fetch metadata in parallel for a list of track IDs and append them as PlaylistEntry objects
+    to the given playlist.
+    """
+    if not track_ids:
+        return
+        
+    import asyncio
+    from sqlalchemy.future import select
+    from app.models import PlaylistEntry
+    
+    # Get current max position
+    pos_stmt = select(PlaylistEntry).where(PlaylistEntry.playlist_id == pl.id)
+    pos_result = await session.execute(pos_stmt)
+    existing = pos_result.scalars().all()
+    max_pos = max([e.position for e in existing], default=-1)
+    
+    # Normalize track IDs and fetch all metadata in parallel
+    numeric_ids = []
+    for track_id in track_ids:
+        try:
+            numeric_ids.append((track_id, resolve_id(track_id)))
+        except ValueError:
+            # If a track ID is completely invalid, we skip it
+            # To be more robust, we might just use the raw track_id string
+            numeric_ids.append((track_id, track_id))
+    
+    results = await asyncio.gather(*[fetch_track_info_safe(int(nid)) for _, nid in numeric_ids])
+    
+    for i, ((track_id, numeric_id), data) in enumerate(zip(numeric_ids, results)):
+        entry_data = {
+            "track_id": track_id if track_id.startswith("tr-") else f"tr-{track_id}",
+            "title": f"Track {numeric_id}",
+        }
+        if data and "data" in data:
+            entry_data = extract_playlist_entry_data(data["data"])
+        
+        entry = PlaylistEntry(
+            playlist_id=pl.id,
+            position=max_pos + 1 + i,
+            **entry_data
+        )
+        session.add(entry)

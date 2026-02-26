@@ -17,7 +17,7 @@ class Star(SQLModel, table=True):
     """Starred items (favorites) per user."""
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
-    item_id: str = Field(index=True)  # "track-123", "album-456", "artist-789"
+    item_id: str = Field(index=True)  # "tr-123", "al-456", "ar-789"
     item_type: str  # "song", "album", "artist"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True)))
 
@@ -37,7 +37,7 @@ class PlaylistEntry(SQLModel, table=True):
     """Tracks in a playlist with cached metadata."""
     id: Optional[int] = Field(default=None, primary_key=True)
     playlist_id: int = Field(foreign_key="playlist.id", index=True)
-    track_id: str  # "track-123"
+    track_id: str  # "tr-123"
     position: int  # Order in playlist
     # Cached metadata (populated via getSong lookup or client-provided data)
     title: Optional[str] = None

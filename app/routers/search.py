@@ -73,10 +73,10 @@ async def search3(
 
             for it in items:
                 cover_uuid = it.get("picture")
-                cover_art_id = cover_uuid if cover_uuid else f"artist-{it['id']}"
+                cover_art_id = cover_uuid if cover_uuid else f"ar-{it['id']}"
                 
                 artists.append({
-                    "id": f"artist-{it['id']}",
+                    "id": f"ar-{it['id']}",
                     "name": it.get("name") or "Unknown Artist",
                     "coverArt": cover_art_id, 
                     "isDir": True
@@ -91,7 +91,7 @@ async def search3(
 
             for it in items:
                 cover_uuid = it.get("cover")
-                cover_art_id = cover_uuid if cover_uuid else f"album-{it['id']}"
+                cover_art_id = cover_uuid if cover_uuid else f"al-{it['id']}"
                 
                 artist_name = "Unknown Artist"
                 if "artist" in it:
@@ -100,7 +100,7 @@ async def search3(
                     artist_name = it["artists"][0].get("name")
                 
                 albums.append({
-                    "id": f"album-{it['id']}",
+                    "id": f"al-{it['id']}",
                     "title": it.get("title") or "Unknown Album",
                     "name": it.get("title") or "Unknown Album", 
                     "artist": artist_name,
