@@ -14,7 +14,7 @@ from app.config import settings
 from app.database import get_session
 from app.models import Star, Playlist, PlaylistEntry
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, extract_playlist_entry_data, fetch_track_info_safe
+from app.routers.common import common_params, extract_playlist_entry_data, extract_track_metadata, fetch_track_info_safe
 from app.hifi_client import hifi_client
 from app.lastfm_client import lastfm_client
 import time as pytime
@@ -139,7 +139,7 @@ async def get_starred(
     commons: dict = Depends(common_params),
     session: AsyncSession = Depends(get_session)
 ):
-    """Get all starred items for the current user."""
+    """Get all starred items for the current user with full metadata."""
     user = commons["user"]
     f = commons["f"]
     
@@ -147,33 +147,93 @@ async def get_starred(
     result = await session.execute(stmt)
     stars = result.scalars().all()
     
-    artists = []
-    albums = []
-    songs = []
+    if not stars:
+        return SubsonicResponse.create({
+            "starred2": {"artist": [], "album": [], "song": []}
+        }, fmt=f)
     
+    # Group starred items by type
+    song_stars = []
+    album_stars = []
+    artist_stars = []
     for star in stars:
-        item = {
-            "id": star.item_id,
+        if star.item_type == "song":
+            song_stars.append(star)
+        elif star.item_type == "album":
+            album_stars.append(star)
+        elif star.item_type == "artist":
+            artist_stars.append(star)
+    
+    # Fetch all metadata in parallel
+    async def fetch_song(star):
+        numeric_id = star.item_id.split("-")[1] if star.item_id.startswith("track-") else star.item_id
+        data = await fetch_track_info_safe(int(numeric_id))
+        if data and "data" in data:
+            song = extract_track_metadata(data["data"])
+            song["starred"] = star.created_at.isoformat() + "Z"
+            return song
+        return {
+            "id": star.item_id, "title": star.item_id,
+            "artist": "Unknown", "album": "Unknown",
+            "duration": 0, "starred": star.created_at.isoformat() + "Z"
+        }
+    
+    async def fetch_album(star):
+        numeric_id = star.item_id.split("-")[1] if star.item_id.startswith("album-") else star.item_id
+        try:
+            data = await hifi_client.get_album(int(numeric_id))
+            d = data.get("data", {}) if data else {}
+            if d:
+                cover_uuid = d.get("cover")
+                return {
+                    "id": star.item_id,
+                    "name": d.get("title") or star.item_id,
+                    "artist": d.get("artist", {}).get("name") or "Unknown",
+                    "artistId": f"artist-{d.get('artist', {}).get('id')}",
+                    "year": int(d.get("releaseDate")[:4]) if d.get("releaseDate") else None,
+                    "songCount": d.get("numberOfTracks"),
+                    "coverArt": cover_uuid if cover_uuid else star.item_id,
+                    "starred": star.created_at.isoformat() + "Z"
+                }
+        except Exception:
+            pass
+        return {
+            "id": star.item_id, "name": star.item_id,
+            "artist": "Unknown", "starred": star.created_at.isoformat() + "Z"
+        }
+    
+    async def fetch_artist(star):
+        numeric_id = star.item_id.split("-")[1] if star.item_id.startswith("artist-") else star.item_id
+        try:
+            data = await hifi_client.get_artist(int(numeric_id))
+            artist_data = data.get("artist", {}) if isinstance(data, dict) else {}
+            if artist_data:
+                cover_uuid = artist_data.get("picture")
+                return {
+                    "id": star.item_id,
+                    "name": artist_data.get("name") or star.item_id,
+                    "coverArt": cover_uuid if cover_uuid else star.item_id,
+                    "albumCount": 0,
+                    "starred": star.created_at.isoformat() + "Z"
+                }
+        except Exception:
+            pass
+        return {
+            "id": star.item_id, "name": star.item_id,
             "starred": star.created_at.isoformat() + "Z"
         }
-        if star.item_type == "artist":
-            item["name"] = star.item_id  # Would need metadata lookup for full name
-            artists.append(item)
-        elif star.item_type == "album":
-            item["name"] = star.item_id
-            item["artist"] = "Unknown"
-            albums.append(item)
-        else:  # song
-            item["title"] = star.item_id
-            item["artist"] = "Unknown"
-            item["album"] = "Unknown"
-            songs.append(item)
+    
+    songs, albums, artists = await asyncio.gather(
+        asyncio.gather(*[fetch_song(s) for s in song_stars]),
+        asyncio.gather(*[fetch_album(s) for s in album_stars]),
+        asyncio.gather(*[fetch_artist(s) for s in artist_stars]),
+    )
     
     return SubsonicResponse.create({
         "starred2": {
-            "artist": artists,
-            "album": albums,
-            "song": songs
+            "artist": list(artists),
+            "album": list(albums),
+            "song": list(songs)
         }
     }, fmt=f)
 
