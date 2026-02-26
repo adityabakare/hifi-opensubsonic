@@ -2,18 +2,18 @@
 Media endpoints for streaming and cover art.
 """
 from fastapi import APIRouter, Query, Depends, Form
+import asyncio
 import re
 from fastapi.responses import RedirectResponse, Response
 from typing import Optional
 import base64
 import json
-import re
 import logging
 
 from app.config import settings
 from app.hifi_client import hifi_client
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, extract_track_metadata
+from app.routers.common import common_params, extract_track_metadata, fetch_track_info_safe
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -221,43 +221,72 @@ async def get_lyrics_by_song_id(
     commons: dict = Depends(common_params)
 ):
     """
-    OpenSubsonic extension: Get lyrics by song ID.
-    PROXIES to hifi-api /lyrics/ endpoint.
+    OpenSubsonic extension: Get structured lyrics by song ID.
+    Returns lyricsList with structuredLyrics per the OpenSubsonic spec.
     """
     track_id = id
     if id.startswith("track-"):
         track_id = id.split("-")[1]
     
     try:
-        data = await hifi_client.get_lyrics(int(track_id))
-        if data and "lyrics" in data:
-            # hifi-api returns raw string or dict? upstream main.py says: return {"lyrics": data}
-            # and data comes from Tidal /lyrics endpoint which returns JSON.
-            # We need to extract the actual lyrics text.
-            
-            # Tidal /lyrics response structure:
-            # {
-            #   "trackId": 123,
-            #   "lyrics": "Line 1\nLine 2...",
-            #   "syncLyrics": "..."
-            # }
-            # hifi-api returns: {"version":..., "lyrics": <tidal_resp>}
-            
-            lyrics_data = data["lyrics"]
-            content = lyrics_data.get("subtitles")
-            
-            if content:
-                return SubsonicResponse.create({
-                    "lyrics": {
-                        "artist": "Unknown", # We don't have this unless we fetch track info too
-                        "title": "Unknown",
-                        "value": content
-                    }
-                }, fmt=commons["f"])
+        # Fetch lyrics and track info in parallel
+        lyrics_data, track_data = await asyncio.gather(
+            hifi_client.get_lyrics(int(track_id)),
+            fetch_track_info_safe(int(track_id)),
+        )
+        
+        if not lyrics_data or "lyrics" not in lyrics_data:
+            return SubsonicResponse.error(70, "Lyrics not found", fmt=commons["f"])
+        
+        content = lyrics_data["lyrics"].get("subtitles", "")
+        if not content:
+            return SubsonicResponse.error(70, "Lyrics not found", fmt=commons["f"])
+        
+        # Extract artist/title from track info
+        artist_name = "Unknown"
+        track_title = "Unknown"
+        if track_data and "data" in track_data:
+            t = track_data["data"]
+            artist_name = t.get("artist", {}).get("name") or "Unknown"
+            track_title = t.get("title") or "Unknown"
+        
+        # Parse LRC format into structured lines
+        lrc_pattern = re.compile(r'\[(\d{2}):(\d{2})\.(\d{2,3})\]\s?(.*)')
+        lines = []
+        is_synced = False
+        
+        for raw_line in content.split("\n"):
+            match = lrc_pattern.match(raw_line.strip())
+            if match:
+                minutes, seconds, centis, text = match.groups()
+                # Convert to milliseconds
+                ms = int(minutes) * 60000 + int(seconds) * 1000
+                if len(centis) == 2:
+                    ms += int(centis) * 10
+                else:
+                    ms += int(centis)
+                lines.append({"start": ms, "value": text})
+                is_synced = True
+            elif raw_line.strip():
+                lines.append({"value": raw_line.strip()})
+        
+        structured = {
+            "displayArtist": artist_name,
+            "displayTitle": track_title,
+            "lang": "und",
+            "synced": is_synced,
+            "offset": 0,
+            "line": lines,
+        }
+        
+        return SubsonicResponse.create({
+            "lyricsList": {
+                "structuredLyrics": [structured]
+            }
+        }, fmt=commons["f"])
                 
     except Exception as e:
         logger.warning(f"Lyrics fetch failed for {id}: {e}")
-        pass
         
     return SubsonicResponse.error(70, "Lyrics not found", fmt=commons["f"])
 
@@ -295,7 +324,7 @@ async def get_lyrics(
         data = await hifi_client.get_lyrics(track_id)
         if data and "lyrics" in data:
             lyrics_data = data["lyrics"]
-            content = lyrics_data.get("subtitles")
+            content = lyrics_data.get("lyrics")
             
             if content:
                 return SubsonicResponse.create({
@@ -308,6 +337,5 @@ async def get_lyrics(
 
     except Exception as e:
         logger.warning(f"Lyrics search/fetch failed for {query}: {e}")
-        pass
 
     return SubsonicResponse.error(70, "Lyrics not found", fmt=commons["f"])
