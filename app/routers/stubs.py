@@ -11,44 +11,6 @@ from app.routers.common import common_params
 router = APIRouter()
 
 
-@router.get("/rest/getAlbumList.view")
-@router.get("/rest/getAlbumList")
-@router.post("/rest/getAlbumList.view")
-@router.post("/rest/getAlbumList")
-@router.get("/rest/getAlbumList2.view")
-@router.get("/rest/getAlbumList2")
-@router.post("/rest/getAlbumList2.view")
-@router.post("/rest/getAlbumList2")
-async def get_album_list(
-    type: str = Query("random"), 
-    size: int = Query(10), 
-    offset: int = Query(0),
-    # Form variants
-    type_form: str = Form(None, alias="type"),
-    size_form: int = Form(None, alias="size"),
-    offset_form: int = Form(None, alias="offset"),
-    
-    commons: dict = Depends(common_params)
-):
-    """
-    Stub for getAlbumList/2. Returns empty list.
-    """
-    f = commons["f"]
-    # Logic to merge Query vs Form
-    # type defaults to "random", type_form defaults to None.
-    # If type_form is present, use it. Else use type (which captures URL or default).
-    final_type = type_form if type_form else type
-    final_size = size_form if size_form is not None else size
-    final_offset = offset_form if offset_form is not None else offset
-    
-    return SubsonicResponse.create({
-        "albumList2": {
-            "album": [],
-            "type": final_type
-        }
-    }, fmt=f)
-
-
 @router.get("/rest/getGenres.view")
 @router.get("/rest/getGenres")
 @router.post("/rest/getGenres.view")
@@ -56,20 +18,6 @@ async def get_album_list(
 async def get_genres(commons: dict = Depends(common_params)):
     return SubsonicResponse.create({
         "genres": {"genre": []}
-    }, fmt=commons["f"])
-
-
-@router.get("/rest/getArtists.view")
-@router.get("/rest/getArtists")
-async def get_artists(commons: dict = Depends(common_params)):
-    """
-    Stub for getArtists. Returns empty index since we are a search-based proxy.
-    """
-    return SubsonicResponse.create({
-        "artists": {
-            "index": [],
-            "ignoredArticles": "The El La Los Las Le Les"
-        }
     }, fmt=commons["f"])
 
 

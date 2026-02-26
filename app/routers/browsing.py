@@ -3,11 +3,20 @@ Browsing endpoints for navigating the music library.
 """
 from fastapi import APIRouter, Depends, Request, Query, Form
 import asyncio
+import random
+import logging
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from app.config import settings
+from app.database import get_session
 from app.hifi_client import hifi_client
+from app.models import Star
 from app.responses import SubsonicResponse
 from app.routers.common import common_params, extract_track_metadata, fetch_artist_albums, resolve_id
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -401,3 +410,248 @@ async def get_artist_info_endpoint(
 
     except Exception as e:
         return SubsonicResponse.error(0, str(e), fmt=f)
+
+@router.get("/rest/getSimilarSongs.view")
+@router.get("/rest/getSimilarSongs")
+@router.post("/rest/getSimilarSongs.view")
+@router.post("/rest/getSimilarSongs")
+@router.get("/rest/getSimilarSongs2.view")
+@router.get("/rest/getSimilarSongs2")
+@router.post("/rest/getSimilarSongs2.view")
+@router.post("/rest/getSimilarSongs2")
+async def get_similar_songs_endpoint(
+    request: Request,
+    id: str = Query(None),
+    count: int = Query(50),
+    id_form: str = Form(None, alias="id"),
+    count_form: int = Form(None, alias="count"),
+    commons: dict = Depends(common_params)
+):
+    """
+    Returns a random collection of songs from the given artist and similar artists.
+    Supports both getSimilarSongs and getSimilarSongs2 parameters.
+    """
+    f = commons["f"]
+    real_id = id or id_form
+    if not real_id:
+        return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
+        
+    count_val = count_form if count_form is not None else count
+    
+    try:
+        track_id = resolve_id(real_id)
+    except ValueError:
+        return SubsonicResponse.error(70, "Track not found", fmt=f)
+        
+    try:
+        data = await hifi_client.get_similar_tracks(track_id)
+        d = data.get("data", {}) if data else {}
+        items = d.get("items", [])
+        
+        songs = []
+        for entry in items[:count_val]:
+            item = entry.get("track", entry)
+            if item:
+                track_meta = extract_track_metadata(item)
+                songs.append(track_meta)
+                
+        is_v2 = "getSimilarSongs2" in request.url.path
+        key = "similarSongs2" if is_v2 else "similarSongs"
+        
+        return SubsonicResponse.create({
+            key: {
+                "song": songs
+            }
+        }, fmt=f)
+        
+    except Exception as e:
+        return SubsonicResponse.error(0, str(e), fmt=f)
+
+
+@router.get("/rest/getAlbumList.view")
+@router.get("/rest/getAlbumList")
+@router.post("/rest/getAlbumList.view")
+@router.post("/rest/getAlbumList")
+@router.get("/rest/getAlbumList2.view")
+@router.get("/rest/getAlbumList2")
+@router.post("/rest/getAlbumList2.view")
+@router.post("/rest/getAlbumList2")
+async def get_album_list(
+    request: Request,
+    type: str = Query("random"),
+    size: int = Query(10),
+    offset: int = Query(0),
+    fromYear: int = Query(None),
+    toYear: int = Query(None),
+    genre: str = Query(None),
+    type_form: str = Form(None, alias="type"),
+    size_form: int = Form(None, alias="size"),
+    offset_form: int = Form(None, alias="offset"),
+    fromYear_form: int = Form(None, alias="fromYear"),
+    toYear_form: int = Form(None, alias="toYear"),
+    genre_form: str = Form(None, alias="genre"),
+    commons: dict = Depends(common_params),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Returns a list of albums. Uses starred albums as the data source,
+    with sorting/filtering based on the requested type.
+    """
+    user = commons["user"]
+    f = commons["f"]
+
+    final_type = type_form if type_form else type
+    final_size = size_form if size_form is not None else size
+    final_offset = offset_form if offset_form is not None else offset
+    final_from_year = fromYear_form if fromYear_form is not None else fromYear
+    final_to_year = toYear_form if toYear_form is not None else toYear
+
+    # Fetch all starred albums for this user
+    stmt = select(Star).where(Star.user_id == user.id, Star.item_type == "album")
+    result = await session.execute(stmt)
+    album_stars = result.scalars().all()
+
+    if not album_stars:
+        key = "albumList2" if "AlbumList2" in request.url.path or "albumList2" in request.url.path else "albumList"
+        return SubsonicResponse.create({key: {"album": []}}, fmt=f)
+
+    # Fetch metadata for all starred albums concurrently
+    async def fetch_album_meta(star: Star):
+        try:
+            numeric_id = resolve_id(star.item_id)
+            data = await hifi_client.get_album(numeric_id)
+            d = data.get("data", {}) if data else {}
+            if d:
+                cover_uuid = d.get("cover")
+                return {
+                    "id": star.item_id,
+                    "name": d.get("title") or star.item_id,
+                    "artist": d.get("artist", {}).get("name") or "Unknown",
+                    "artistId": f"ar-{d.get('artist', {}).get('id')}",
+                    "year": int(d.get("releaseDate")[:4]) if d.get("releaseDate") else None,
+                    "genre": "",
+                    "songCount": d.get("numberOfTracks"),
+                    "duration": d.get("duration") or 0,
+                    "coverArt": cover_uuid if cover_uuid else star.item_id,
+                    "created": star.created_at.isoformat() + "Z",
+                    "starred": star.created_at.isoformat() + "Z",
+                    "_starred_at": star.created_at,
+                }
+        except Exception:
+            logger.debug(f"Failed to fetch album metadata for {star.item_id}")
+        return None
+
+    results = await asyncio.gather(*[fetch_album_meta(s) for s in album_stars])
+    albums = [a for a in results if a is not None]
+
+    # Sort/filter based on type
+    if final_type == "random":
+        random.shuffle(albums)
+    elif final_type == "newest":
+        albums.sort(key=lambda a: a.get("_starred_at") or "", reverse=True)
+    elif final_type == "starred":
+        albums.sort(key=lambda a: a.get("_starred_at") or "", reverse=True)
+    elif final_type == "alphabeticalByName":
+        albums.sort(key=lambda a: (a.get("name") or "").lower())
+    elif final_type == "alphabeticalByArtist":
+        albums.sort(key=lambda a: (a.get("artist") or "").lower())
+    elif final_type == "byYear" and final_from_year is not None and final_to_year is not None:
+        lo, hi = min(final_from_year, final_to_year), max(final_from_year, final_to_year)
+        albums = [a for a in albums if a.get("year") and lo <= a["year"] <= hi]
+        ascending = final_from_year <= final_to_year
+        albums.sort(key=lambda a: a.get("year") or 0, reverse=not ascending)
+    # For 'recent', 'frequent', 'highest' — fall through with default (starred) order
+
+    # Strip internal fields before responding
+    for a in albums:
+        a.pop("_starred_at", None)
+
+    page = albums[final_offset : final_offset + final_size]
+
+    is_v2 = "AlbumList2" in request.url.path or "albumList2" in request.url.path
+    key = "albumList2" if is_v2 else "albumList"
+
+
+    return SubsonicResponse.create({key: {"album": page}}, fmt=f)
+
+
+@router.get("/rest/getArtists.view")
+@router.get("/rest/getArtists")
+@router.post("/rest/getArtists.view")
+@router.post("/rest/getArtists")
+async def get_artists(
+    commons: dict = Depends(common_params),
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Returns a list of all artists. Uses starred artists as the data source,
+    grouped by the first letter of the artist's name.
+    """
+    user = commons["user"]
+    f = commons["f"]
+
+    # Fetch all starred artists for this user
+    stmt = select(Star).where(Star.user_id == user.id, Star.item_type == "artist")
+    result = await session.execute(stmt)
+    artist_stars = result.scalars().all()
+
+    if not artist_stars:
+        return SubsonicResponse.create({
+            "artists": {
+                "ignoredArticles": "The El La Los Las Le Les",
+                "index": []
+            }
+        }, fmt=f)
+
+    # Fetch metadata for all starred artists concurrently
+    async def fetch_artist_meta(star: Star):
+        try:
+            numeric_id = resolve_id(star.item_id)
+            data = await hifi_client.get_artist(numeric_id)
+            artist_data = data.get("artist", {}) if isinstance(data, dict) else {}
+            if artist_data:
+                cover_uuid = artist_data.get("picture")
+                return {
+                    "id": star.item_id,
+                    "name": artist_data.get("name") or "Unknown Artist",
+                    "coverArt": cover_uuid if cover_uuid else star.item_id,
+                    "albumCount": 0,
+                    "starred": star.created_at.isoformat() + "Z",
+                    "_sort_name": (artist_data.get("name") or "Unknown Format").upper()
+                }
+        except Exception:
+            logger.debug(f"Failed to fetch artist metadata for {star.item_id}")
+        return None
+
+    results = await asyncio.gather(*[fetch_artist_meta(s) for s in artist_stars])
+    artists = [a for a in results if a is not None]
+
+    # Subsonic groups artists alphabetically by the first character of their name
+    indices = {}
+    for artist in artists:
+        sort_name = artist.pop("_sort_name", "")
+        # Determine the group letter. Use '#' for non-alphabetical
+        first_char = sort_name[0] if sort_name else "#"
+        if not first_char.isalpha():
+            first_char = "#"
+        elif sort_name.startswith("THE "):
+            first_char = sort_name[4] if len(sort_name) > 4 else "T"
+            
+        group = first_char.upper()
+        if group not in indices:
+            indices[group] = {"name": group, "artist": []}
+        indices[group]["artist"].append(artist)
+        
+    # Sort groups alphabetically, ensuring '#' is first or properly sorted
+    sorted_groups = []
+    for group_name in sorted(indices.keys()):
+        # Sort artists inside the group
+        indices[group_name]["artist"].sort(key=lambda a: a.get("name", "").lower())
+        sorted_groups.append(indices[group_name])
+
+    return SubsonicResponse.create({
+        "artists": {
+            "ignoredArticles": "The El La Los Las Le Les",
+            "index": sorted_groups
+        }
+    }, fmt=f)

@@ -97,4 +97,8 @@ class HifiClient:
         """Get lyrics for a track ID."""
         return await self._get("/lyrics/", params={"id": track_id})
 
+    async def get_similar_tracks(self, track_id: int):
+        """Get similar tracks (recommendations) for a track ID."""
+        return await self._get("/recommendations/", params={"id": track_id})
+
 hifi_client = HifiClient()
