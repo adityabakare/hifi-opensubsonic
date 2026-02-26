@@ -10,7 +10,14 @@ class HifiClient:
     def __init__(self):
         self.instances = []
         self._load_instances()
-        self.client = httpx.AsyncClient(timeout=60.0)
+        self.client = httpx.AsyncClient(
+            http2=True,
+            limits=httpx.Limits(
+                max_connections=20,
+                max_keepalive_connections=10,
+            ),
+            timeout=60.0,
+        )
 
     def _load_instances(self):
         """Load upstream instances from HIFI_INSTANCES config."""
