@@ -226,13 +226,63 @@ async def fetch_artist_albums(artist_id: int, artist_name: str = "") -> list:
     Returns:
         List of album dicts that belong to this artist.
     """
+    def preference_deduplicator(album_list: list) -> list:
+        pref = settings.EXPLICIT_CONTENT_FILTER.lower()
+        groups = {}
+        deduped_no_title = []
+        
+        for alb in album_list:
+            title = alb.get("title", "").strip().lower()
+            if not title:
+                deduped_no_title.append(alb)
+            else:
+                if title not in groups:
+                    groups[title] = []
+                groups[title].append(alb)
+                
+        deduped = list(deduped_no_title)
+        for title, versions in groups.items():
+            best_alb = None
+            best_score = -100
+            
+            for alb in versions:
+                score = 0
+                is_explicit = alb.get("explicit", False)
+                q = alb.get("audioQuality", "")
+                
+                # Quality base score
+                if q in ["HI_RES", "HI_RES_LOSSLESS", "HIRES_LOSSLESS"]: score += 10
+                elif q == "LOSSLESS": score += 8
+                elif q == "HIGH": score += 5
+                elif q == "LOW": score -= 5
+                
+                # Penalty for Atmos/Sony360 because they might not play right on standard clients
+                tags = alb.get("mediaMetadata", {}).get("tags", [])
+                if "DOLBY_ATMOS" in tags or "SONY_360RA" in tags:
+                    score -= 10
+                
+                # Preference score
+                if pref == "explicit" and is_explicit:
+                    score += 50
+                elif pref == "clean" and not is_explicit:
+                    score += 50
+                    
+                if score > best_score:
+                    best_score = score
+                    best_alb = alb
+                    
+            if best_alb:
+                deduped.append(best_alb)
+                
+        return deduped
+
     try:
         # Use the upstream's direct /artist/?f={id} endpoint
         res = await hifi_client.get_artist_albums(artist_id)
         albums_data = res.get("albums", {}) if isinstance(res, dict) else {}
         items = albums_data.get("items", [])
         if items:
-            return items
+            return preference_deduplicator(items)
     except Exception:
         pass
 
@@ -268,4 +318,4 @@ async def fetch_artist_albums(artist_id: int, artist_name: str = "") -> list:
         if match:
             matched.append(it)
 
-    return matched
+    return preference_deduplicator(matched)

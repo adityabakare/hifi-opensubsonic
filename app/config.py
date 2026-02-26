@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     HIFI_INSTANCES: List[str] = ["https://monochrome-api.samidy.com"]  # Upstream API URLs (JSON array in .env)
     LASTFM_API_KEY: Optional[str] = None
     LASTFM_API_SECRET: Optional[str] = None
+    EXPLICIT_CONTENT_FILTER: str = "All"  # "All", "Clean", "Explicit"
 
     class Config:
         env_file = ".env"

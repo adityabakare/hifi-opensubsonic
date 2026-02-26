@@ -128,6 +128,8 @@ async def get_cover_art(
 @router.get("/rest/download")
 async def stream(
     id: str,
+    maxBitRate: Optional[int] = Query(None),
+    format: Optional[str] = Query(None),
     commons: dict = Depends(common_params)
 ):
     """
@@ -138,8 +140,17 @@ async def stream(
     if id.startswith("track-"):
         track_id = id.split("-")[1]
 
+    # Map maxBitRate to Tidal qualities
+    # Tidal qualities: LOW (~96kbps), HIGH (~320kbps), LOSSLESS (FLAC), HI_RES_LOSSLESS
+    quality = "LOSSLESS"
+    if maxBitRate:
+        if maxBitRate <= 160:
+            quality = "LOW"
+        elif maxBitRate <= 320:
+            quality = "HIGH"
+            
     try:
-        data = await hifi_client.get_track(int(track_id))
+        data = await hifi_client.get_track(int(track_id), quality=quality)
         if not data or "data" not in data:
             return SubsonicResponse.error(70, "Stream not found", fmt=commons["f"])
              
