@@ -111,15 +111,7 @@ async def get_cover_art(
 
     tidal_url = f"https://resources.tidal.com/images/{final_id}/{target_size}x{target_size}.jpg"
 
-    try:
-        resp = await hifi_client.client.get(tidal_url, timeout=10.0)
-        if resp.status_code != 200:
-            return SubsonicResponse.error(70, "Cover art inaccessible", fmt=commons["f"])
-
-        return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"))
-
-    except Exception:
-        return SubsonicResponse.error(70, "Failed to fetch cover art", fmt=commons["f"])
+    return RedirectResponse(tidal_url)
 
 
 @router.get("/rest/stream.view")
