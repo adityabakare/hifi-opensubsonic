@@ -3,6 +3,7 @@ User data endpoints - starred items, playlists, scrobbles.
 These endpoints persist data per-user in the database.
 """
 from fastapi import APIRouter, Query, Depends, Form, BackgroundTasks
+import asyncio
 from sqlalchemy.future import select
 from sqlalchemy import delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,7 @@ from app.config import settings
 from app.database import get_session
 from app.models import Star, Playlist, PlaylistEntry
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, extract_playlist_entry_data
+from app.routers.common import common_params, extract_playlist_entry_data, fetch_track_info_safe
 from app.hifi_client import hifi_client
 from app.lastfm_client import lastfm_client
 import time as pytime
@@ -370,22 +371,21 @@ async def create_playlist(
         existing = pos_result.scalars().all()
         max_pos = max([e.position for e in existing], default=-1)
         
-        for i, track_id in enumerate(songId):
-            # Normalize track_id to "track-123" format
-            numeric_id = track_id.split("-")[1] if track_id.startswith("track-") else track_id
-            
-            # Fetch track metadata using shared function
+        # Normalize track IDs and fetch all metadata in parallel
+        numeric_ids = [
+            (track_id, track_id.split("-")[1] if track_id.startswith("track-") else track_id)
+            for track_id in songId
+        ]
+        
+        results = await asyncio.gather(*[fetch_track_info_safe(int(nid)) for _, nid in numeric_ids])
+        
+        for i, ((track_id, numeric_id), data) in enumerate(zip(numeric_ids, results)):
             entry_data = {
                 "track_id": track_id if track_id.startswith("track-") else f"track-{track_id}",
                 "title": f"Track {numeric_id}",
             }
-
-            try:
-                data = await hifi_client.get_track_info(int(numeric_id))
-                if data and "data" in data:
-                    entry_data = extract_playlist_entry_data(data["data"])
-            except Exception:
-                pass  # Use defaults
+            if data and "data" in data:
+                entry_data = extract_playlist_entry_data(data["data"])
             
             entry = PlaylistEntry(
                 playlist_id=pl.id,
@@ -523,22 +523,21 @@ async def update_playlist(
         existing = pos_result.scalars().all()
         max_pos = max([e.position for e in existing], default=-1)
         
-        for i, track_id in enumerate(songIdToAdd):
-            # Normalize track_id to "track-123" format
-            numeric_id = track_id.split("-")[1] if track_id.startswith("track-") else track_id
-            
-            # Fetch track metadata using shared function
+        # Normalize track IDs and fetch all metadata in parallel
+        numeric_ids = [
+            (track_id, track_id.split("-")[1] if track_id.startswith("track-") else track_id)
+            for track_id in songIdToAdd
+        ]
+        
+        results = await asyncio.gather(*[fetch_track_info_safe(int(nid)) for _, nid in numeric_ids])
+        
+        for i, ((track_id, numeric_id), data) in enumerate(zip(numeric_ids, results)):
             entry_data = {
                 "track_id": track_id if track_id.startswith("track-") else f"track-{track_id}",
                 "title": f"Track {numeric_id}",
             }
-
-            try:
-                data = await hifi_client.get_track_info(int(numeric_id))
-                if data and "data" in data:
-                    entry_data = extract_playlist_entry_data(data["data"])
-            except Exception:
-                pass  # Use defaults
+            if data and "data" in data:
+                entry_data = extract_playlist_entry_data(data["data"])
             
             entry = PlaylistEntry(
                 playlist_id=pl.id,

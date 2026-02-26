@@ -12,6 +12,14 @@ from app.database import get_session
 from app.auth import authenticate_user
 
 
+async def fetch_track_info_safe(numeric_id: int):
+    """Fetch track info from upstream, returning None on failure."""
+    try:
+        return await hifi_client.get_track_info(numeric_id)
+    except Exception:
+        return None
+
+
 async def common_params(
     u: Optional[str] = Query(None),
     p: Optional[str] = Query(None),

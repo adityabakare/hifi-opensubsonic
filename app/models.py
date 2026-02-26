@@ -38,6 +38,7 @@ class SearchResult3(BaseModel):
     # Simplified for now
 
 from sqlmodel import Field, SQLModel
+from sqlalchemy import Column, DateTime
 from datetime import datetime, timezone
 
 class User(SQLModel, table=True):
@@ -45,7 +46,7 @@ class User(SQLModel, table=True):
     username: str = Field(index=True, unique=True)
     password_hash: str
     email: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True)))
     is_admin: bool = False
     lastfm_session_key: Optional[str] = None
 
@@ -56,7 +57,7 @@ class Star(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True)
     item_id: str = Field(index=True)  # "track-123", "album-456", "artist-789"
     item_type: str  # "song", "album", "artist"
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True)))
 
 
 class Playlist(SQLModel, table=True):
@@ -66,8 +67,8 @@ class Playlist(SQLModel, table=True):
     name: str
     comment: Optional[str] = ""
     public: bool = False
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    changed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True)))
+    changed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True)))
 
 
 class PlaylistEntry(SQLModel, table=True):
