@@ -3,6 +3,7 @@ Search endpoints for music discovery.
 """
 from fastapi import APIRouter, Depends, Query, Form
 import asyncio
+from typing import Optional
 
 from app.config import settings
 from app.hifi_client import hifi_client
@@ -14,6 +15,8 @@ router = APIRouter()
 
 @router.get("/rest/search3.view")
 @router.get("/rest/search3")
+@router.post("/rest/search3.view")
+@router.post("/rest/search3")
 async def search3(
     query: str = Query(None),
     songCount: int = Query(20),
@@ -22,6 +25,7 @@ async def search3(
     songOffset: int = Query(0),
     albumOffset: int = Query(0),
     artistOffset: int = Query(0),
+    musicFolderId: Optional[str] = Query(None),
     # Form vars
     query_form: str = Form(None, alias="query"),
     songCount_form: int = Form(None, alias="songCount"),
@@ -30,6 +34,7 @@ async def search3(
     songOffset_form: int = Form(None, alias="songOffset"),
     albumOffset_form: int = Form(None, alias="albumOffset"),
     artistOffset_form: int = Form(None, alias="artistOffset"),
+    musicFolderId_form: Optional[str] = Form(None, alias="musicFolderId"),
     
     commons: dict = Depends(common_params)
 ):

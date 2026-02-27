@@ -106,20 +106,33 @@ async def get_cover_art(
 
 @router.get("/rest/stream.view")
 @router.get("/rest/stream")
+@router.post("/rest/stream.view")
+@router.post("/rest/stream")
 @router.get("/rest/download.view")
 @router.get("/rest/download")
+@router.post("/rest/download.view")
+@router.post("/rest/download")
 async def stream(
-    id: str,
+    id: str = Query(None),
     maxBitRate: Optional[int] = Query(None),
     format: Optional[str] = Query(None),
+    id_form: str = Form(None, alias="id"),
+    maxBitRate_form: Optional[int] = Form(None, alias="maxBitRate"),
+    format_form: Optional[str] = Form(None, alias="format"),
     commons: dict = Depends(common_params)
 ):
     """
     Streams the media.
     Decodes Tidal manifest and redirects to the direct stream URL.
     """
+    real_id = id or id_form
+    if not real_id:
+        return SubsonicResponse.error(10, "Required parameter is missing", fmt=commons["f"])
+    maxBitRate = maxBitRate_form if maxBitRate_form is not None else maxBitRate
+    format = format_form if format_form is not None else format
+
     try:
-        track_id = resolve_id(id)
+        track_id = resolve_id(real_id)
     except ValueError:
         return SubsonicResponse.error(70, "Invalid stream ID", fmt=commons["f"])
 
@@ -211,16 +224,23 @@ async def get_song(
 
 @router.get("/rest/getLyricsBySongId.view")
 @router.get("/rest/getLyricsBySongId")
+@router.post("/rest/getLyricsBySongId.view")
+@router.post("/rest/getLyricsBySongId")
 async def get_lyrics_by_song_id(
-    id: str,
+    id: str = Query(None),
+    id_form: str = Form(None, alias="id"),
     commons: dict = Depends(common_params)
 ):
     """
     OpenSubsonic extension: Get structured lyrics by song ID.
     Returns lyricsList with structuredLyrics per the OpenSubsonic spec.
     """
+    real_id = id or id_form
+    if not real_id:
+        return SubsonicResponse.error(10, "Required parameter is missing", fmt=commons["f"])
+
     try:
-        track_numeric_id = resolve_id(id)
+        track_numeric_id = resolve_id(real_id)
     except ValueError:
         return SubsonicResponse.error(70, "Invalid song ID", fmt=commons["f"])
     
@@ -282,22 +302,28 @@ async def get_lyrics_by_song_id(
         }, fmt=commons["f"])
                 
     except Exception as e:
-        logger.warning(f"Lyrics fetch failed for {id}: {e}")
+        logger.warning(f"Lyrics fetch failed for {real_id}: {e}")
         
     return SubsonicResponse.error(70, "Lyrics not found", fmt=commons["f"])
 
 
 @router.get("/rest/getLyrics.view")
 @router.get("/rest/getLyrics")
+@router.post("/rest/getLyrics.view")
+@router.post("/rest/getLyrics")
 async def get_lyrics(
-    artist: Optional[str] = None,
-    title: Optional[str] = None,
+    artist: Optional[str] = Query(None),
+    title: Optional[str] = Query(None),
+    artist_form: Optional[str] = Form(None, alias="artist"),
+    title_form: Optional[str] = Form(None, alias="title"),
     commons: dict = Depends(common_params)
 ):
     """
     Standard Subsonic getLyrics.
     Attempts to find song by Artist + Title, then fetches lyrics.
     """
+    artist = artist or artist_form
+    title = title or title_form
     if not artist or not title:
          return SubsonicResponse.error(10, "Artist and title required", fmt=commons["f"])
          

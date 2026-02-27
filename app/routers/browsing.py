@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request, Query, Form
 import asyncio
 import random
 import logging
+from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -135,6 +136,8 @@ async def get_music_directory(
 
 @router.get("/rest/getArtist.view")
 @router.get("/rest/getArtist")
+@router.post("/rest/getArtist.view")
+@router.post("/rest/getArtist")
 async def get_artist(
     id: str = Query(None),
     id_form: str = Form(None, alias="id"),
@@ -192,6 +195,8 @@ async def get_artist(
 
 @router.get("/rest/getAlbum.view")
 @router.get("/rest/getAlbum")
+@router.post("/rest/getAlbum.view")
+@router.post("/rest/getAlbum")
 async def get_album_endpoint(
     id: str = Query(None),
     id_form: str = Form(None, alias="id"),
@@ -251,6 +256,8 @@ async def get_album_endpoint(
 
 @router.get("/rest/getAlbumInfo2.view")
 @router.get("/rest/getAlbumInfo2")
+@router.post("/rest/getAlbumInfo2.view")
+@router.post("/rest/getAlbumInfo2")
 async def get_album_info2(
     request: Request,
     id: str = Query(None),
@@ -484,12 +491,14 @@ async def get_album_list(
     fromYear: int = Query(None),
     toYear: int = Query(None),
     genre: str = Query(None),
+    musicFolderId: Optional[str] = Query(None),
     type_form: str = Form(None, alias="type"),
     size_form: int = Form(None, alias="size"),
     offset_form: int = Form(None, alias="offset"),
     fromYear_form: int = Form(None, alias="fromYear"),
     toYear_form: int = Form(None, alias="toYear"),
     genre_form: str = Form(None, alias="genre"),
+    musicFolderId_form: Optional[str] = Form(None, alias="musicFolderId"),
     commons: dict = Depends(common_params),
     session: AsyncSession = Depends(get_session),
 ):
@@ -580,6 +589,8 @@ async def get_album_list(
 @router.post("/rest/getArtists.view")
 @router.post("/rest/getArtists")
 async def get_artists(
+    musicFolderId: Optional[str] = Query(None),
+    musicFolderId_form: Optional[str] = Form(None, alias="musicFolderId"),
     commons: dict = Depends(common_params),
     session: AsyncSession = Depends(get_session)
 ):
