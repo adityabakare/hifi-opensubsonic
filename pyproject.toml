@@ -17,4 +17,5 @@ dependencies = [
     "python-multipart",
     "pyjwt>=2.11.0",
     "slowapi>=0.1.9",
+    "cryptography>=46.0.5",
 ]

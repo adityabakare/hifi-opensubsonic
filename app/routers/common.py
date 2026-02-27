@@ -89,7 +89,11 @@ async def common_params(
             except Exception:
                 pass  # Fallback to raw password if decode fails
         
-        user = await authenticate_user(session, final_u, password)
+        user = await authenticate_user(session, final_u, password=password)
+
+    elif final_u and final_t and final_s:
+        # User provided token auth (md5(password + salt))
+        user = await authenticate_user(session, final_u, token=final_t, salt=final_s)
 
     if not user:
         if not final_u:

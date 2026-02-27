@@ -11,6 +11,7 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True)))
     is_admin: bool = False
     lastfm_session_key: Optional[str] = None
+    subsonic_token: Optional[str] = None
 
 
 class Star(SQLModel, table=True):

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     LASTFM_API_KEY: Optional[str] = None
     LASTFM_API_SECRET: Optional[str] = None
     EXPLICIT_CONTENT_FILTER: str = "All"  # "All", "Clean", "Explicit"
+    TOKEN_ENCRYPTION_KEY: str  # 32-url-safe-base64 key for encrypting subsonic_token
 
     class Config:
         env_file = ".env"

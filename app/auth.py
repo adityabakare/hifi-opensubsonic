@@ -5,11 +5,16 @@ from app.models import User
 from typing import Optional
 from fastapi import Request, Depends, HTTPException
 import jwt
+import hashlib
+from cryptography.fernet import Fernet
 from app.config import settings
 from app.database import get_session
 
 # Setup password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Use the required TOKEN_ENCRYPTION_KEY directly
+fernet = Fernet(settings.TOKEN_ENCRYPTION_KEY.encode('utf-8'))
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
@@ -17,9 +22,16 @@ def verify_password(plain_password, hashed_password):
 def get_password_hash(password):
     return pwd_context.hash(password)
 
-async def authenticate_user(session: AsyncSession, username: str, password: str) -> Optional[User]:
+async def authenticate_user(
+    session: AsyncSession, 
+    username: str, 
+    password: Optional[str] = None, 
+    token: Optional[str] = None, 
+    salt: Optional[str] = None
+) -> Optional[User]:
     """
-    Authenticate a user by username and password.
+    Authenticate a user by username and either password OR (token + salt).
+    Token is expected to be md5(password + salt).
     """
     statement = select(User).where(User.username == username)
     result = await session.execute(statement)
@@ -28,10 +40,20 @@ async def authenticate_user(session: AsyncSession, username: str, password: str)
     if not user:
         return None
         
-    if not verify_password(password, user.password_hash):
-        return None
-        
-    return user
+    if password is not None:
+        if verify_password(password, user.password_hash):
+            return user
+            
+    if token is not None and salt is not None:
+        # Subsonic Token Auth requires knowing the raw password to compute md5(password + salt)
+        if hasattr(user, 'subsonic_token') and user.subsonic_token:
+            # Decrypt the stored token
+            plain_password = fernet.decrypt(user.subsonic_token.encode('utf-8')).decode('utf-8')
+            expected = hashlib.md5((plain_password + salt).encode('utf-8')).hexdigest()
+            if token.lower() == expected.lower():
+                return user
+
+    return None
 
 async def get_user_by_username(session: AsyncSession, username: str) -> Optional[User]:
     statement = select(User).where(User.username == username)
@@ -40,7 +62,16 @@ async def get_user_by_username(session: AsyncSession, username: str) -> Optional
 
 async def create_user(session: AsyncSession, username: str, password: str, email: str = None, is_admin: bool = False) -> User:
     password_hash = get_password_hash(password)
-    user = User(username=username, password_hash=password_hash, email=email, is_admin=is_admin)
+    # Encrypt the plaintext password so it's not stored in the clear
+    encrypted_token = fernet.encrypt(password.encode('utf-8')).decode('utf-8')
+    
+    user = User(
+        username=username, 
+        password_hash=password_hash, 
+        email=email, 
+        is_admin=is_admin,
+        subsonic_token=encrypted_token
+    )
     session.add(user)
     await session.commit()
     await session.refresh(user)

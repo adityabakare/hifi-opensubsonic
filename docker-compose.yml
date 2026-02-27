@@ -29,6 +29,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-subsonic}:${POSTGRES_PASSWORD:-subsonic}@db:5432/${POSTGRES_DB:-subsonic}
       - JWT_SECRET=${JWT_SECRET}
       - HIFI_INSTANCES=${HIFI_INSTANCES}
+      - TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}
     networks:
       - hifi-net
 
