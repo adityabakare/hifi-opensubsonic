@@ -1,6 +1,7 @@
 """
 Common utilities shared across all Subsonic router modules.
 """
+import logging
 from fastapi import Query, Depends, Form
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,12 +12,15 @@ from app.responses import SubsonicResponse, SubsonicException
 from app.database import get_session
 from app.auth import authenticate_user
 
+logger = logging.getLogger(__name__)
+
 
 async def fetch_track_info_safe(numeric_id: int):
     """Fetch track info from upstream, returning None on failure."""
     try:
         return await hifi_client.get_track_info(numeric_id)
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to fetch track info for %s: %s", numeric_id, e)
         return None
 
 
@@ -86,8 +90,8 @@ async def common_params(
             try:
                 hex_str = final_p[4:]
                 password = bytes.fromhex(hex_str).decode("utf-8")
-            except Exception:
-                pass  # Fallback to raw password if decode fails
+            except (ValueError, UnicodeDecodeError) as e:
+                logger.debug("Failed to decode enc: password, using raw value: %s", e)
         
         user = await authenticate_user(session, final_u, password=password)
 
@@ -168,13 +172,13 @@ def extract_track_metadata(track: dict) -> dict:
     if track.get("streamStartDate"):
         try:
             year = int(track.get("streamStartDate")[:4])
-        except:
-            pass
+        except (ValueError, TypeError) as e:
+            logger.debug("Failed to parse year from streamStartDate: %s", e)
     elif track.get("releaseDate"):
         try:
             year = int(track.get("releaseDate")[:4])
-        except:
-            pass
+        except (ValueError, TypeError) as e:
+            logger.debug("Failed to parse year from releaseDate: %s", e)
     
     return {
         "id": f"tr-{track.get('id')}",
@@ -303,8 +307,8 @@ async def fetch_artist_albums(artist_id: int, artist_name: str = "") -> list:
         items = albums_data.get("items", [])
         if items:
             return preference_deduplicator(items)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to fetch albums for artist %s, falling back to search: %s", artist_id, e)
 
     # Fallback: search by name and filter
     if not artist_name:

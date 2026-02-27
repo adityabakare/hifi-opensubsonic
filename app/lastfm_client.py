@@ -85,8 +85,8 @@ class LastFmClient:
             try:
                 print(f"❌ Response: {e.response.text}")
                 logger.error(f"Response: {e.response.text}")
-            except:
-                pass
+            except AttributeError:
+                logger.debug("No response body available for scrobble error")
             return False
 
 lastfm_client = LastFmClient()

@@ -537,8 +537,8 @@ async def get_album_list(
                     "starred": star.created_at.isoformat() + "Z",
                     "_starred_at": star.created_at,
                 }
-        except Exception:
-            logger.debug(f"Failed to fetch album metadata for {star.item_id}")
+        except Exception as e:
+            logger.warning("Failed to fetch album metadata for %s: %s", star.item_id, e)
         return None
 
     results = await asyncio.gather(*[fetch_album_meta(s) for s in album_stars])
@@ -619,8 +619,8 @@ async def get_artists(
                     "starred": star.created_at.isoformat() + "Z",
                     "_sort_name": (artist_data.get("name") or "Unknown Format").upper()
                 }
-        except Exception:
-            logger.debug(f"Failed to fetch artist metadata for {star.item_id}")
+        except Exception as e:
+            logger.warning("Failed to fetch artist metadata for %s: %s", star.item_id, e)
         return None
 
     results = await asyncio.gather(*[fetch_artist_meta(s) for s in artist_stars])

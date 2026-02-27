@@ -17,8 +17,10 @@ from app.responses import SubsonicResponse
 from app.routers.common import common_params, extract_playlist_entry_data, extract_track_metadata, fetch_track_info_safe, add_tracks_to_playlist, resolve_id
 from app.hifi_client import hifi_client
 from app.lastfm_client import lastfm_client
+import logging
 import time as pytime
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -198,8 +200,8 @@ async def get_starred(
                     "coverArt": cover_uuid if cover_uuid else star.item_id,
                     "starred": star.created_at.isoformat() + "Z"
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to fetch starred album metadata for %s: %s", star.item_id, e)
         return {
             "id": star.item_id, "name": star.item_id,
             "artist": "Unknown", "starred": star.created_at.isoformat() + "Z"
@@ -219,8 +221,8 @@ async def get_starred(
                     "albumCount": 0,
                     "starred": star.created_at.isoformat() + "Z"
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to fetch starred artist metadata for %s: %s", star.item_id, e)
         return {
             "id": star.item_id, "name": star.item_id,
             "starred": star.created_at.isoformat() + "Z"
@@ -613,7 +615,7 @@ async def scrobble(
                         album=album
                     )
         except Exception as e:
-            logging.getLogger(__name__).warning(f"Failed to scrobble to Last.fm: {e}")
+            logger.warning("Failed to scrobble to Last.fm: %s", e)
             
     return SubsonicResponse.create({
     }, fmt=f)

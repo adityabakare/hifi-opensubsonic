@@ -84,15 +84,15 @@ async def get_cover_art(
                 art = await hifi_client.get_artist(numeric_id)
                 artist_data = art.get("artist", {}) if isinstance(art, dict) else {}
                 resolved_uuid = artist_data.get("picture")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to fetch artist cover art for %s: %s", numeric_id, e)
         else:
             try:
                 alb = await hifi_client.get_album(numeric_id)
                 album_data = alb.get("data", {}) if isinstance(alb, dict) else {}
                 resolved_uuid = album_data.get("cover")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to fetch album cover art for %s: %s", numeric_id, e)
 
         if not resolved_uuid:
             return SubsonicResponse.error(70, "Cover art not found", fmt=commons["f"])
