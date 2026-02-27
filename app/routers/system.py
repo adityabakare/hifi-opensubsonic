@@ -34,12 +34,16 @@ router = APIRouter()
 @router.post("/rest/ping.view")
 @router.get("/rest/ping")
 @router.post("/rest/ping")
-async def ping(commons: dict = Depends(common_params)):
+async def ping(
+    f: Optional[str] = Query("xml"),
+    f_form: Optional[str] = Form(None, alias="f")
+):
     """
     Subsonic Ping.
     Returns a simple OK status.
     """
-    return SubsonicResponse.create({}, fmt=commons["f"])
+    final_f = f_form if f_form else f
+    return SubsonicResponse.create({}, fmt=final_f)
 
 
 @router.get("/rest/getOpenSubsonicExtensions.view")
