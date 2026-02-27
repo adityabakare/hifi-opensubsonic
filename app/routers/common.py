@@ -169,17 +169,26 @@ def extract_track_metadata(track: dict) -> dict:
     
     # Extract year from streamStartDate or releaseDate
     year = None
+    created = None
     if track.get("streamStartDate"):
         try:
             year = int(track.get("streamStartDate")[:4])
         except (ValueError, TypeError) as e:
             logger.debug("Failed to parse year from streamStartDate: %s", e)
+        created = track.get("streamStartDate")
     elif track.get("releaseDate"):
         try:
             year = int(track.get("releaseDate")[:4])
         except (ValueError, TypeError) as e:
             logger.debug("Failed to parse year from releaseDate: %s", e)
+        created = track.get("releaseDate")
     
+    # Ensure created is ISO 8601 with timezone suffix
+    if created and not created.endswith("Z") and "+" not in created:
+        created += "T00:00:00.000Z"
+    elif not created:
+        created = "2025-01-01T00:00:00.000Z"
+
     return {
         "id": f"tr-{track.get('id')}",
         "title": track.get("title") or "Unknown Title",
@@ -192,6 +201,7 @@ def extract_track_metadata(track: dict) -> dict:
         "track": track.get("trackNumber"),
         "discNumber": track.get("volumeNumber"),
         "year": year,
+        "created": created,
         "replayGain": {
             "trackGain": track.get("replayGain"),
             "trackPeak": track.get("peak"),
@@ -201,6 +211,7 @@ def extract_track_metadata(track: dict) -> dict:
         "isDir": False,
         "isVideo": False,
         "type": "music",
+        "mediaType": "song",
         **fmt_info
     }
 

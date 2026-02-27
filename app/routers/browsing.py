@@ -229,7 +229,6 @@ async def get_album_endpoint(
             track_meta["parent"] = f"al-{album_id}"
             track_meta["album"] = d.get("title") or track_meta["album"]
             track_meta["albumId"] = f"al-{album_id}"
-            track_meta["created"] = "2025-01-01T00:00:00.000Z"
             songs.append(track_meta)
 
         cover_art_id = album_cover_uuid if album_cover_uuid else f"al-{album_id}"
