@@ -76,15 +76,12 @@ class LastFmClient:
 
         try:
             resp = await self.client.post(self.base_url, data=params)
-            print(f"✅ Successfully scrobbled to Last.fm: {artist} - {track}")
-            logger.info(f"Successfully scrobbled to Last.fm: {artist} - {track}")
+            logger.info("Successfully scrobbled to Last.fm: %s - %s", artist, track)
             return True
         except httpx.HTTPError as e:
-            print(f"❌ Failed to scrobble track {track} to Last.fm: {e}")
-            logger.error(f"Failed to scrobble track {track} to Last.fm: {e}")
+            logger.error("Failed to scrobble track %s to Last.fm: %s", track, e)
             try:
-                print(f"❌ Response: {e.response.text}")
-                logger.error(f"Response: {e.response.text}")
+                logger.error("Response: %s", e.response.text)
             except AttributeError:
                 logger.debug("No response body available for scrobble error")
             return False

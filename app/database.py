@@ -1,10 +1,13 @@
 from sqlmodel import SQLModel, create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from typing import AsyncGenerator
 from app.config import settings
 
 # Create async engine
 engine = create_async_engine(settings.DATABASE_URL, echo=False, future=True)
+
+async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 import asyncio
 import logging
@@ -28,9 +31,6 @@ async def init_db():
             logger.warning(f"Database connection failed ({e}), retrying in {delay}s...")
             await asyncio.sleep(delay)
 
-async def get_session() -> AsyncSession:
-    async_session = sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session

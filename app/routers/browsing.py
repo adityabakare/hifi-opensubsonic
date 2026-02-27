@@ -232,7 +232,7 @@ async def get_album_endpoint(
             songs.append(track_meta)
 
         cover_art_id = album_cover_uuid if album_cover_uuid else f"al-{album_id}"
-        
+
         return SubsonicResponse.create({
             "album": {
                 "id": f"al-{album_id}",
@@ -242,8 +242,8 @@ async def get_album_endpoint(
                 "year": int(d.get("releaseDate")[:4]) if d.get("releaseDate") else None,
                 "songCount": d.get("numberOfTracks"),
                 "duration": sum(s.get("duration", 0) for s in songs),
-                "created": "2025-01-01T00:00:00.000Z",
-                "genre": "Pop",
+                "created": (d.get("releaseDate") or "2025-01-01") + "T00:00:00Z",
+                "genre": "",
                 "coverArt": cover_art_id,
                 "song": songs
             }

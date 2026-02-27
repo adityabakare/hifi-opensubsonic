@@ -1,4 +1,5 @@
 import os
+import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -8,18 +9,17 @@ from app.responses import SubsonicResponse, SubsonicException
 from app.auth import get_user_by_username, create_user
 from app.hifi_client import hifi_client
 from app.lastfm_client import lastfm_client
-from app.database import engine, get_session # for sessionmaker
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import async_session, init_db
 from fastapi import Request
 
 from contextlib import asynccontextmanager
-from app.database import init_db
 
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from app.limiter import limiter
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,11 +27,10 @@ async def lifespan(app: FastAPI):
     
     # Seed default user if not exists
     # We need a session independent of request
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session() as session:
         user = await get_user_by_username(session, "admin")
         if not user:
-            print("Seeding default admin user...")
+            logger.info("Seeding default admin user...")
             await create_user(session, "admin", "admin", is_admin=True)
             
     yield

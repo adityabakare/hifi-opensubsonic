@@ -71,30 +71,22 @@ class SubsonicResponse:
 
     @staticmethod
     def error(code: int, message: str, fmt: str = "json", version: str = "1.16.1"):
-        data = {
-            "subsonic-response": {
-                "@status": "failed", # XML attribute style
-                "@version": version,
-                "error": {
-                    "@code": str(code),
-                    "@message": message
+        if fmt == "xml":
+            data = {
+                "subsonic-response": {
+                    "@status": "failed",
+                    "@version": version,
+                    "@xmlns": "http://subsonic.org/restapi",
+                    "error": {
+                        "@code": str(code),
+                        "@message": message
+                    }
                 }
             }
-        }
-        # Adjust for JSON (Subsonic JSON format is slightly different usually, 
-        # attributes are just keys, but let's stick to a cleaned version if needed)
-        # Actually OpenSubsonic JSON spec says: 
-        # "The JSON representation is a direct mapping of the XML."
-        # Attributes are properties prefixed with @ in some specs? 
-        # OpenSubsonic conventions:
-        # "In JSON, attributes are represented as regular properties."
-        # We might need a cleaner to strip @ for JSON if we want "clean" JSON, 
-        # but standard Subsonic JSON often keeps them or just has them as keys.
-        # Let's try to start with simple keys.
-        
-        if fmt == 'json':
-            # Clean keys for JSON?
-             data = {
+            xml_content = xmltodict.unparse(data, pretty=True)
+            return Response(content=xml_content, media_type="application/xml")
+        else:
+            data = {
                 "subsonic-response": {
                     "status": "failed",
                     "version": version,
@@ -104,5 +96,4 @@ class SubsonicResponse:
                     }
                 }
             }
-        
-        return SubsonicResponse.create(data, fmt)
+            return JSONResponse(content=data)

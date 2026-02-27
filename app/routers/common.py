@@ -167,27 +167,19 @@ def extract_track_metadata(track: dict) -> dict:
     cover_uuid = track.get("album", {}).get("cover")
     cover_art_id = cover_uuid if cover_uuid else f"al-{track.get('album', {}).get('id')}"
     
-    # Extract year from streamStartDate or releaseDate
+    # Extract year and created timestamp from streamStartDate or releaseDate
+    date_source = track.get("streamStartDate") or track.get("releaseDate")
     year = None
-    created = None
-    if track.get("streamStartDate"):
+    if date_source:
         try:
-            year = int(track.get("streamStartDate")[:4])
+            year = int(date_source[:4])
         except (ValueError, TypeError) as e:
-            logger.debug("Failed to parse year from streamStartDate: %s", e)
-        created = track.get("streamStartDate")
-    elif track.get("releaseDate"):
-        try:
-            year = int(track.get("releaseDate")[:4])
-        except (ValueError, TypeError) as e:
-            logger.debug("Failed to parse year from releaseDate: %s", e)
-        created = track.get("releaseDate")
-    
-    # Ensure created is ISO 8601 with timezone suffix
-    if created and not created.endswith("Z") and "+" not in created:
-        created += "T00:00:00.000Z"
-    elif not created:
-        created = "2025-01-01T00:00:00.000Z"
+            logger.debug("Failed to parse year from date: %s", e)
+
+    # streamStartDate is already full ISO 8601; releaseDate is date-only
+    created = date_source or "2025-01-01"
+    if "T" not in created:
+        created += "T00:00:00Z"
 
     return {
         "id": f"tr-{track.get('id')}",
