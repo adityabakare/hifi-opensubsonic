@@ -199,6 +199,7 @@ def extract_track_metadata(track: dict) -> dict:
             "trackPeak": track.get("peak"),
             "baseGain": 0,
         },
+        "bpm": track.get("bpm") or 0,
         "parent": f"al-{track.get('album', {}).get('id')}",
         "isDir": False,
         "isVideo": False,
@@ -238,6 +239,7 @@ def extract_playlist_entry_data(track: dict) -> dict:
         "sampling_rate": base.get("samplingRate", 44100),
         "suffix": base.get("suffix", "flac"),
         "content_type": base.get("contentType", "audio/flac"),
+        "bpm": base.get("bpm"),
     }
 
 

@@ -58,5 +58,6 @@ class PlaylistEntry(SQLModel, table=True):
     sampling_rate: Optional[int] = 44100
     suffix: Optional[str] = "flac"
     content_type: Optional[str] = "audio/flac"
+    bpm: Optional[int] = None
     is_video: bool = False
     is_dir: bool = False

@@ -356,6 +356,7 @@ async def get_playlist(
             "samplingRate": entry.sampling_rate or 44100,
             "suffix": entry.suffix or "flac",
             "contentType": entry.content_type or "audio/flac",
+            "bpm": entry.bpm or 0,
             "size": int(duration * (entry.bit_rate or 1411) * 125), # Estimate size (kbps -> bytes)
             "path": f"music/{entry.track_id}.{entry.suffix or 'flac'}"
         })
