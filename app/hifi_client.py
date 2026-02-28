@@ -93,6 +93,41 @@ class HifiClient:
         """
         return await self._get("/info/", params={"id": track_id})
 
+    async def get_track_full(self, track_id: int, quality: str = "LOSSLESS"):
+        """
+        Concurrently fetches both /info/ (full metadata, BPM) and /track/ (accurate Replay Gain).
+        Merges the precise gain data from /track/ into the /info/ payload and returns the unified track dictionary.
+        """
+        import asyncio
+        info_task = self.get_track_info(track_id)
+        # Pass quality to get accurate format/gain for the requested stream quality
+        track_task = self.get_track(track_id, quality=quality)
+        
+        info_res, track_res = await asyncio.gather(info_task, track_task, return_exceptions=True)
+        
+        # If info failed, we can't return a unified payload, return early or raise
+        if isinstance(info_res, Exception):
+            raise info_res
+            
+        merged = info_res
+        
+        # If we successfully got track details, inject its specialized gain fields into info["data"]
+        if not isinstance(track_res, Exception) and track_res and "data" in track_res:
+            td = track_res["data"]
+            if merged and "data" in merged:
+                md = merged["data"]
+                # Save the album-level gain values from /track into the /info dict
+                if "albumReplayGain" in td:
+                    md["albumReplayGain"] = td["albumReplayGain"]
+                if "albumPeakAmplitude" in td:
+                    md["albumPeakAmplitude"] = td["albumPeakAmplitude"]
+                if "trackReplayGain" in td:
+                    md["trackReplayGain"] = td["trackReplayGain"]
+                if "trackPeakAmplitude" in td:
+                    md["trackPeakAmplitude"] = td["trackPeakAmplitude"]
+                    
+        return merged
+
     async def get_lyrics(self, track_id: int):
         """Get lyrics for a track ID."""
         return await self._get("/lyrics/", params={"id": track_id})

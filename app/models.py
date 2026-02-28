@@ -61,3 +61,9 @@ class PlaylistEntry(SQLModel, table=True):
     bpm: Optional[int] = None
     is_video: bool = False
     is_dir: bool = False
+    
+    # Replay Gain properties
+    track_gain: Optional[float] = None
+    album_gain: Optional[float] = None
+    track_peak: Optional[float] = None
+    album_peak: Optional[float] = None

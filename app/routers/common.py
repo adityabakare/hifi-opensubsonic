@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 async def fetch_track_info_safe(numeric_id: int):
     """Fetch track info from upstream, returning None on failure."""
     try:
-        return await hifi_client.get_track_info(numeric_id)
+        return await hifi_client.get_track_full(numeric_id)
     except Exception as e:
         logger.warning("Failed to fetch track info for %s: %s", numeric_id, e)
         return None
@@ -195,8 +195,10 @@ def extract_track_metadata(track: dict) -> dict:
         "year": year,
         "created": created,
         "replayGain": {
-            "trackGain": track.get("replayGain"),
-            "trackPeak": track.get("peak"),
+            "trackGain": track.get("trackReplayGain", track.get("replayGain")),
+            "albumGain": track.get("albumReplayGain"),
+            "trackPeak": track.get("trackPeakAmplitude", track.get("peak")),
+            "albumPeak": track.get("albumPeakAmplitude"),
             "baseGain": 0,
         },
         "bpm": track.get("bpm") or 0,
@@ -240,6 +242,12 @@ def extract_playlist_entry_data(track: dict) -> dict:
         "suffix": base.get("suffix", "flac"),
         "content_type": base.get("contentType", "audio/flac"),
         "bpm": base.get("bpm"),
+        
+        # Gain properties
+        "track_gain": base.get("replayGain", {}).get("trackGain"),
+        "album_gain": base.get("replayGain", {}).get("albumGain"),
+        "track_peak": base.get("replayGain", {}).get("trackPeak"),
+        "album_peak": base.get("replayGain", {}).get("albumPeak"),
     }
 
 

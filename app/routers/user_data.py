@@ -348,6 +348,13 @@ async def get_playlist(
             "isDir": entry.is_dir or False,
             "isVideo": entry.is_video or False,
             "type": "music",
+            "replayGain": {
+                "trackGain": entry.track_gain,
+                "albumGain": entry.album_gain,
+                "trackPeak": entry.track_peak,
+                "albumPeak": entry.album_peak,
+                "baseGain": 0,
+            },
             "track": entry.track_number,
             "discNumber": entry.disc_number,
             "year": entry.year,

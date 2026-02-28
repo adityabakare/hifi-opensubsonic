@@ -210,8 +210,8 @@ async def get_song(
         return SubsonicResponse.error(70, "Song not found", fmt=commons["f"])
     
     try:
-        # Use /info endpoint which returns full track metadata
-        data = await hifi_client.get_track_info(int(track_id))
+        # Use combined endpoint which returns full track metadata + accurate replay gain
+        data = await hifi_client.get_track_full(int(track_id))
         if data and "data" in data:
             track = extract_track_metadata(data["data"])
             return SubsonicResponse.create({
