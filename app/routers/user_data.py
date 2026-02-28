@@ -12,7 +12,7 @@ from typing import Optional, List
 
 from app.config import settings
 from app.database import get_session
-from app.models import Star, Playlist, PlaylistEntry
+from app.models import Star, Playlist, PlaylistEntry, PlayQueue, PlayQueueEntry
 from app.responses import SubsonicResponse
 from app.routers.common import common_params, extract_playlist_entry_data, extract_track_metadata, fetch_track_info_safe, add_tracks_to_playlist, resolve_id
 from app.hifi_client import hifi_client
@@ -653,3 +653,179 @@ async def set_rating(
     rating = rating_form if rating_form is not None else rating
     return SubsonicResponse.create({
     }, fmt=commons["f"])
+
+
+# --- Play Queue ---
+
+@router.get("/rest/getPlayQueue.view")
+@router.get("/rest/getPlayQueue")
+@router.post("/rest/getPlayQueue.view")
+@router.post("/rest/getPlayQueue")
+async def get_play_queue(
+    commons: dict = Depends(common_params),
+    session: AsyncSession = Depends(get_session)
+):
+    """Returns the state of the play queue for this user."""
+    user = commons["user"]
+    f = commons["f"]
+
+    stmt = select(PlayQueue).where(PlayQueue.user_id == user.id)
+    result = await session.execute(stmt)
+    pq = result.scalars().first()
+
+    if not pq:
+        return SubsonicResponse.create({
+            "playQueue": {
+                "entry": [],
+                "username": user.username,
+                "changed": datetime.now(timezone.utc).isoformat() + "Z",
+                "changedBy": ""
+            }
+        }, fmt=f)
+
+    # Fetch queue entries
+    entries_stmt = select(PlayQueueEntry).where(
+        PlayQueueEntry.play_queue_id == pq.id
+    ).order_by(PlayQueueEntry.position)
+    entries_result = await session.execute(entries_stmt)
+    entries = entries_result.scalars().all()
+
+    songs = []
+    for entry in entries:
+        duration = entry.duration or 0
+        song = {
+            "id": entry.track_id,
+            "parent": entry.album_id or f"al-{entry.track_id}",
+            "title": entry.title or entry.track_id,
+            "artist": entry.artist or "Unknown Artist",
+            "artistId": entry.artist_id or "ar-0",
+            "album": entry.album or "Unknown Album",
+            "albumId": entry.album_id or "al-0",
+            "coverArt": entry.cover_art or entry.album_id or entry.track_id,
+            "duration": duration,
+            "isDir": entry.is_dir or False,
+            "isVideo": entry.is_video or False,
+            "type": "music",
+            "mediaType": "song",
+            "replayGain": {
+                "trackGain": entry.track_gain,
+                "albumGain": entry.album_gain,
+                "trackPeak": entry.track_peak,
+                "albumPeak": entry.album_peak,
+                "baseGain": 0,
+            },
+            "track": entry.track_number,
+            "discNumber": entry.disc_number,
+            "year": entry.year,
+            "suffix": entry.suffix or "flac",
+            "contentType": entry.content_type or "audio/flac",
+            "bpm": entry.bpm or 0,
+            "path": f"music/{entry.track_id}.{entry.suffix or 'flac'}"
+        }
+        if entry.bit_rate:
+            song["bitRate"] = entry.bit_rate
+            song["size"] = int(duration * entry.bit_rate * 125)
+        if entry.bit_depth:
+            song["bitDepth"] = entry.bit_depth
+        if entry.sampling_rate:
+            song["samplingRate"] = entry.sampling_rate
+        songs.append(song)
+
+    play_queue_response = {
+        "entry": songs,
+        "username": user.username,
+        "changed": pq.changed_at.isoformat() + "Z",
+        "changedBy": pq.changed_by or ""
+    }
+    if pq.current_track_id:
+        play_queue_response["current"] = pq.current_track_id
+    if pq.position is not None:
+        play_queue_response["position"] = pq.position
+
+    return SubsonicResponse.create({
+        "playQueue": play_queue_response
+    }, fmt=f)
+
+
+@router.get("/rest/savePlayQueue.view")
+@router.get("/rest/savePlayQueue")
+@router.post("/rest/savePlayQueue.view")
+@router.post("/rest/savePlayQueue")
+async def save_play_queue(
+    id: Optional[List[str]] = Query(None),
+    current: Optional[str] = Query(None),
+    position: Optional[int] = Query(None),
+    # Form vars
+    id_form: Optional[List[str]] = Form(None, alias="id"),
+    current_form: Optional[str] = Form(None, alias="current"),
+    position_form: Optional[int] = Form(None, alias="position"),
+
+    commons: dict = Depends(common_params),
+    session: AsyncSession = Depends(get_session)
+):
+    """Saves the state of the play queue for this user."""
+    user = commons["user"]
+    f = commons["f"]
+    client_name = commons.get("c", "")
+
+    track_ids = id if id else id_form
+    current = current or current_form
+    position = position if position is not None else position_form
+
+    # Get or create the user's play queue
+    stmt = select(PlayQueue).where(PlayQueue.user_id == user.id)
+    result = await session.execute(stmt)
+    pq = result.scalars().first()
+
+    if not pq:
+        pq = PlayQueue(user_id=user.id)
+        session.add(pq)
+        await session.flush()
+
+    # Clear existing entries
+    await session.execute(
+        delete(PlayQueueEntry).where(PlayQueueEntry.play_queue_id == pq.id)
+    )
+
+    # Update queue metadata
+    pq.current_track_id = current
+    pq.position = position or 0
+    pq.changed_by = client_name or pq.changed_by
+    pq.changed_at = datetime.now(timezone.utc)
+
+    # If no track IDs provided, we're clearing the queue
+    if not track_ids:
+        pq.current_track_id = None
+        pq.position = 0
+        await session.commit()
+        return SubsonicResponse.create({}, fmt=f)
+
+    # Normalize IDs and fetch metadata in parallel
+    numeric_ids = []
+    for track_id in track_ids:
+        try:
+            numeric_ids.append((track_id, resolve_id(track_id)))
+        except ValueError:
+            numeric_ids.append((track_id, track_id))
+
+    results = await asyncio.gather(
+        *[fetch_track_info_safe(int(nid)) for _, nid in numeric_ids]
+    )
+
+    for i, ((track_id, numeric_id), data) in enumerate(zip(numeric_ids, results)):
+        entry_data = {
+            "track_id": track_id if track_id.startswith("tr-") else f"tr-{track_id}",
+            "title": f"Track {numeric_id}",
+        }
+        if data and "data" in data:
+            entry_data = extract_playlist_entry_data(data["data"])
+
+        entry = PlayQueueEntry(
+            play_queue_id=pq.id,
+            position=i,
+            **entry_data
+        )
+        session.add(entry)
+
+    await session.commit()
+    return SubsonicResponse.create({}, fmt=f)

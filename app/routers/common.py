@@ -105,7 +105,7 @@ async def common_params(
         else:
             raise SubsonicException(code=40, message="Wrong username or password", fmt=fmt)
     
-    return {"f": fmt, "v": final_v, "user": user}
+    return {"f": fmt, "v": final_v, "c": final_c, "user": user}
 
 
 def get_track_format(item: dict) -> dict:
