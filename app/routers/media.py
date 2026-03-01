@@ -37,7 +37,7 @@ async def get_cover_art(
 
     req_size = (size_form if size_form is not None else size) or 0
 
-    target_size = 750
+    target_size = 1280
     if req_size > 0:
         if req_size <= 80:
             target_size = 80
@@ -78,6 +78,7 @@ async def get_cover_art(
 
         # Resolve numeric ID to UUID via upstream API
         resolved_uuid = None
+        video_cover_uuid = None
 
         if type_hint == "artist":
             try:
@@ -91,11 +92,19 @@ async def get_cover_art(
                 alb = await hifi_client.get_album(numeric_id)
                 album_data = alb.get("data", {}) if isinstance(alb, dict) else {}
                 resolved_uuid = album_data.get("cover")
+                video_cover_uuid = album_data.get("videoCover")
             except Exception as e:
                 logger.warning("Failed to fetch album cover art for %s: %s", numeric_id, e)
 
         if not resolved_uuid:
             return SubsonicResponse.error(70, "Cover art not found", fmt=commons["f"])
+
+        # If album has a video cover, serve the animated mp4 instead of static image
+        if video_cover_uuid:
+            video_id = video_cover_uuid.replace("-", "/")
+            video_size = target_size if target_size <= 1280 else 1280
+            tidal_url = f"https://resources.tidal.com/videos/{video_id}/{video_size}x{video_size}.mp4"
+            return RedirectResponse(tidal_url)
 
         final_id = resolved_uuid.replace("-", "/")
 
