@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     TOKEN_ENCRYPTION_KEY: str  # 32-url-safe-base64 key for encrypting subsonic_token
     CACHE_TTL_METADATA: int = 3600   # Cache TTL for artist/album/track metadata (seconds)
     CACHE_TTL_SEARCH: int = 300      # Cache TTL for search results (seconds)
+    UPSTREAM_MAX_CONNECTIONS: int = 100       # httpx connection pool max
+    UPSTREAM_MAX_KEEPALIVE: int = 50          # httpx keepalive connections
+    UPSTREAM_TIMEOUT: float = 30.0            # Request timeout (seconds)
+    UPSTREAM_MAX_CONCURRENCY: int = 30        # Max parallel upstream requests
+    CIRCUIT_BREAKER_THRESHOLD: int = 5        # Consecutive failures before tripping
+    CIRCUIT_BREAKER_RECOVERY: int = 30        # Seconds before retrying a tripped instance
 
     class Config:
         env_file = ".env"

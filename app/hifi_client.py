@@ -1,5 +1,7 @@
 import httpx
-from typing import Optional, Dict, Any, List
+import copy
+import time
+from typing import Optional, Dict, Any
 import asyncio
 import random
 import logging
@@ -12,56 +14,134 @@ from app.cache import (
 
 logger = logging.getLogger(__name__)
 
+
+class _CircuitState:
+    """Per-instance circuit breaker state."""
+    __slots__ = ("failures", "open_until")
+
+    def __init__(self):
+        self.failures: int = 0
+        self.open_until: float = 0.0  # monotonic timestamp
+
+    @property
+    def is_open(self) -> bool:
+        return (
+            self.failures >= settings.CIRCUIT_BREAKER_THRESHOLD
+            and time.monotonic() < self.open_until
+        )
+
+    @property
+    def is_half_open(self) -> bool:
+        """Recovery window expired — allow a single probe request."""
+        return (
+            self.failures >= settings.CIRCUIT_BREAKER_THRESHOLD
+            and time.monotonic() >= self.open_until
+        )
+
+    def record_failure(self):
+        self.failures += 1
+        if self.failures >= settings.CIRCUIT_BREAKER_THRESHOLD:
+            self.open_until = time.monotonic() + settings.CIRCUIT_BREAKER_RECOVERY
+            logger.warning(
+                "Circuit OPEN for instance (failures=%d, recovery in %ds)",
+                self.failures,
+                settings.CIRCUIT_BREAKER_RECOVERY,
+            )
+
+    def record_success(self):
+        if self.failures > 0:
+            logger.info("Circuit RESET (was at %d failures)", self.failures)
+        self.failures = 0
+        self.open_until = 0.0
+
+
 class HifiClient:
     def __init__(self):
-        self.instances = []
+        self.instances: list[str] = []
         self._load_instances()
         self.client = httpx.AsyncClient(
             http2=True,
             limits=httpx.Limits(
-                max_connections=20,
-                max_keepalive_connections=10,
+                max_connections=settings.UPSTREAM_MAX_CONNECTIONS,
+                max_keepalive_connections=settings.UPSTREAM_MAX_KEEPALIVE,
             ),
-            timeout=60.0,
+            timeout=settings.UPSTREAM_TIMEOUT,
         )
+        self._semaphore = asyncio.Semaphore(settings.UPSTREAM_MAX_CONCURRENCY)
+        self._circuits: dict[str, _CircuitState] = {
+            url: _CircuitState() for url in self.instances
+        }
 
     def _load_instances(self):
         """Load upstream instances from HIFI_INSTANCES config."""
         self.instances = list(settings.HIFI_INSTANCES)
         logger.info(f"Loaded {len(self.instances)} upstream instances from environment.")
 
+    def _get_circuit(self, base_url: str) -> _CircuitState:
+        """Get or create circuit state for an instance."""
+        if base_url not in self._circuits:
+            self._circuits[base_url] = _CircuitState()
+        return self._circuits[base_url]
+
     async def close(self):
         await self.client.aclose()
 
     async def _get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Execute GET request with random instance failover.
+        Execute GET request with:
+        - Concurrency limiting (semaphore)
+        - Random instance selection with failover
+        - Per-instance circuit breaker
         """
-        candidates = list(self.instances)
-        random.shuffle(candidates)
-        
-        last_error = None
-        
-        for base_url in candidates:
-            url = f"{base_url}{endpoint}"
-            try:
-                resp = await self.client.get(url, params=params)
-                if resp.status_code >= 500:
-                    last_error = f"Status {resp.status_code}"
+        async with self._semaphore:
+            candidates = list(self.instances)
+            random.shuffle(candidates)
+
+            # Partition into available and open-circuit instances
+            available = []
+            half_open = []
+            for url in candidates:
+                circuit = self._get_circuit(url)
+                if circuit.is_open:
+                    continue  # Skip fully-open circuits
+                elif circuit.is_half_open:
+                    half_open.append(url)  # Allow as last resort
+                else:
+                    available.append(url)
+
+            # Try available first, then half-open as probes
+            ordered = available + half_open
+
+            if not ordered:
+                logger.error("All upstream instances have open circuits")
+                raise ConnectionError("All upstream instances are unavailable")
+
+            last_error = None
+
+            for base_url in ordered:
+                circuit = self._get_circuit(base_url)
+                url = f"{base_url}{endpoint}"
+                try:
+                    resp = await self.client.get(url, params=params)
+                    if resp.status_code >= 500:
+                        circuit.record_failure()
+                        last_error = f"Status {resp.status_code}"
+                        continue
+
+                    resp.raise_for_status()
+                    circuit.record_success()
+                    return resp.json()
+                except httpx.HTTPStatusError as e:
+                    # Do not retry on 4xx client errors — not the instance's fault
+                    circuit.record_success()  # Instance is reachable
+                    raise e
+                except Exception as e:
+                    circuit.record_failure()
+                    last_error = e
                     continue
-                
-                resp.raise_for_status()
-                return resp.json()
-            except httpx.HTTPStatusError as e:
-                # Do not retry on 4xx client errors
-                raise e
-            except Exception as e:
-                # Retry on connection errors or 5xx (handled above via continue)
-                last_error = e
-                continue
-        
-        logger.warning(f"All upstream instances failed. Last error: {last_error}")
-        raise last_error if last_error else Exception("No instances available")
+
+            logger.warning(f"All upstream instances failed. Last error: {last_error}")
+            raise last_error if isinstance(last_error, Exception) else Exception(str(last_error) if last_error else "No instances available")
 
     # --- Search (cached, short TTL) ---
 
@@ -125,7 +205,6 @@ class HifiClient:
             raise info_res
         
         # Deep copy so cached /info/ data isn't mutated
-        import copy
         merged = copy.deepcopy(info_res)
         
         # If we successfully got track details, inject its specialized gain fields into info["data"]
