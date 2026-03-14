@@ -1,7 +1,8 @@
 from typing import Optional
 from sqlmodel import Field, SQLModel
-from sqlalchemy import Column, DateTime
+from sqlalchemy import Column, DateTime, Index
 from datetime import datetime, timezone
+
 
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -16,6 +17,11 @@ class User(SQLModel, table=True):
 
 class Star(SQLModel, table=True):
     """Starred items (favorites) per user."""
+    __table_args__ = (
+        Index("ix_star_user_item", "user_id", "item_id"),       # star/unstar lookups
+        Index("ix_star_user_type", "user_id", "item_type"),     # getStarred, getAlbumList, getArtists
+    )
+
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
     item_id: str = Field(index=True)  # "tr-123", "al-456", "ar-789"
@@ -36,6 +42,10 @@ class Playlist(SQLModel, table=True):
 
 class PlaylistEntry(SQLModel, table=True):
     """Tracks in a playlist with cached metadata."""
+    __table_args__ = (
+        Index("ix_playlistentry_playlist_pos", "playlist_id", "position"),  # ordered retrieval
+    )
+
     id: Optional[int] = Field(default=None, primary_key=True)
     playlist_id: int = Field(foreign_key="playlist.id", index=True)
     track_id: str  # "tr-123"
@@ -81,6 +91,10 @@ class PlayQueue(SQLModel, table=True):
 
 class PlayQueueEntry(SQLModel, table=True):
     """Tracks in a user's play queue with cached metadata."""
+    __table_args__ = (
+        Index("ix_playqueueentry_queue_pos", "play_queue_id", "position"),  # ordered retrieval
+    )
+
     id: Optional[int] = Field(default=None, primary_key=True)
     play_queue_id: int = Field(foreign_key="playqueue.id", index=True)
     track_id: str  # "tr-123"
