@@ -1,8 +1,14 @@
 import httpx
 from typing import Optional, Dict, Any, List
+import asyncio
 import random
 import logging
 from app.config import settings
+from app.cache import (
+    artist_cache, album_cache, track_cache,
+    search_cache, lyrics_cache, similar_cache,
+    cached_call, _make_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,33 +63,40 @@ class HifiClient:
         logger.warning(f"All upstream instances failed. Last error: {last_error}")
         raise last_error if last_error else Exception("No instances available")
 
-    # --- Search ---
+    # --- Search (cached, short TTL) ---
 
     async def search_tracks(self, query: str):
-        return await self._get("/search/", params={"s": query})
+        key = _make_key("search_tracks", query)
+        return await cached_call(search_cache, key, lambda: self._get("/search/", params={"s": query}))
 
     async def search_artists(self, query: str):
-        return await self._get("/search/", params={"a": query})
+        key = _make_key("search_artists", query)
+        return await cached_call(search_cache, key, lambda: self._get("/search/", params={"a": query}))
     
     async def search_albums(self, query: str):
-        return await self._get("/search/", params={"al": query})
+        key = _make_key("search_albums", query)
+        return await cached_call(search_cache, key, lambda: self._get("/search/", params={"al": query}))
 
-    # --- Metadata ---
+    # --- Metadata (cached, long TTL) ---
 
     async def get_artist(self, artist_id: int):
-        return await self._get("/artist/", params={"id": artist_id})
+        key = _make_key("artist", artist_id)
+        return await cached_call(artist_cache, key, lambda: self._get("/artist/", params={"id": artist_id}))
 
     async def get_artist_albums(self, artist_id: int):
-        return await self._get("/artist/", params={"f": artist_id})
+        key = _make_key("artist_albums", artist_id)
+        return await cached_call(album_cache, key, lambda: self._get("/artist/", params={"f": artist_id}))
 
     async def get_album(self, album_id: int):
-        return await self._get("/album/", params={"id": album_id})
+        key = _make_key("album", album_id)
+        return await cached_call(album_cache, key, lambda: self._get("/album/", params={"id": album_id}))
 
     async def get_similar_artists(self, artist_id: int):
-        return await self._get("/artist/similar/", params={"id": artist_id})
+        key = _make_key("similar_artists", artist_id)
+        return await cached_call(similar_cache, key, lambda: self._get("/artist/similar/", params={"id": artist_id}))
 
     async def get_track(self, track_id: int, quality: str = "LOSSLESS"):
-        """Get track streaming info (manifest/url). For metadata use get_track_info()."""
+        """Get track streaming info (manifest/url). NOT cached — URLs are time-limited."""
         return await self._get("/track/", params={"id": track_id, "quality": quality})
 
     async def get_track_info(self, track_id: int):
@@ -91,14 +104,16 @@ class HifiClient:
         Get full track metadata (title, artist, album, duration, cover).
         Uses /info/ endpoint which returns complete track information.
         """
-        return await self._get("/info/", params={"id": track_id})
+        key = _make_key("track_info", track_id)
+        return await cached_call(track_cache, key, lambda: self._get("/info/", params={"id": track_id}))
 
     async def get_track_full(self, track_id: int, quality: str = "LOSSLESS"):
         """
         Concurrently fetches both /info/ (full metadata, BPM) and /track/ (accurate Replay Gain).
         Merges the precise gain data from /track/ into the /info/ payload and returns the unified track dictionary.
+        
+        /info/ results are cached; /track/ is always live (stream URLs are time-limited).
         """
-        import asyncio
         info_task = self.get_track_info(track_id)
         # Pass quality to get accurate format/gain for the requested stream quality
         track_task = self.get_track(track_id, quality=quality)
@@ -108,8 +123,10 @@ class HifiClient:
         # If info failed, we can't return a unified payload, return early or raise
         if isinstance(info_res, Exception):
             raise info_res
-            
-        merged = info_res
+        
+        # Deep copy so cached /info/ data isn't mutated
+        import copy
+        merged = copy.deepcopy(info_res)
         
         # If we successfully got track details, inject its specialized gain fields into info["data"]
         if not isinstance(track_res, Exception) and track_res and "data" in track_res:
@@ -130,10 +147,12 @@ class HifiClient:
 
     async def get_lyrics(self, track_id: int):
         """Get lyrics for a track ID."""
-        return await self._get("/lyrics/", params={"id": track_id})
+        key = _make_key("lyrics", track_id)
+        return await cached_call(lyrics_cache, key, lambda: self._get("/lyrics/", params={"id": track_id}))
 
     async def get_similar_tracks(self, track_id: int):
         """Get similar tracks (recommendations) for a track ID."""
-        return await self._get("/recommendations/", params={"id": track_id})
+        key = _make_key("similar_tracks", track_id)
+        return await cached_call(similar_cache, key, lambda: self._get("/recommendations/", params={"id": track_id}))
 
 hifi_client = HifiClient()

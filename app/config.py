@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     LASTFM_API_SECRET: Optional[str] = None
     EXPLICIT_CONTENT_FILTER: str = "All"  # "All", "Clean", "Explicit"
     TOKEN_ENCRYPTION_KEY: str  # 32-url-safe-base64 key for encrypting subsonic_token
+    CACHE_TTL_METADATA: int = 3600   # Cache TTL for artist/album/track metadata (seconds)
+    CACHE_TTL_SEARCH: int = 300      # Cache TTL for search results (seconds)
 
     class Config:
         env_file = ".env"
