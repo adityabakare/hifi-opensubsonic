@@ -1,5 +1,7 @@
 import os
 import logging
+import secrets
+import string
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -25,13 +27,20 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     await init_db()
     
-    # Seed default user if not exists
-    # We need a session independent of request
+    # Seed default admin user if not exists
     async with async_session() as session:
         user = await get_user_by_username(session, "admin")
         if not user:
-            logger.info("Seeding default admin user...")
-            await create_user(session, "admin", "admin", is_admin=True)
+            # Generate a random password for the admin user
+            alphabet = string.ascii_letters + string.digits
+            generated_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+            await create_user(session, "admin", generated_password, is_admin=True)
+            logger.warning("\n" + "=" * 60)
+            logger.warning("  DEFAULT ADMIN USER CREATED")
+            logger.warning("  Username: admin")
+            logger.warning("  Password: %s", generated_password)
+            logger.warning("  ⚠️  Change this password immediately after first login!")
+            logger.warning("=" * 60 + "\n")
 
     # Fetch upstream instances from monochrome
     await hifi_client.init()
