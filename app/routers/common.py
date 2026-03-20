@@ -1,16 +1,19 @@
 """
 Common utilities shared across all Subsonic router modules.
 """
+import asyncio
 import logging
 from fastapi import Query, Depends, Form
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from app.config import settings
 from app.hifi_client import hifi_client
 from app.responses import SubsonicResponse, SubsonicException
 from app.database import get_session
 from app.auth import authenticate_user
+from app.models import PlaylistEntry
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +254,58 @@ def extract_playlist_entry_data(track: dict) -> dict:
     }
 
 
+def _preference_deduplicator(album_list: list) -> list:
+    """Deduplicate albums by title, preferring explicit/clean based on config."""
+    pref = settings.EXPLICIT_CONTENT_FILTER.lower()
+    groups = {}
+    deduped_no_title = []
+    
+    for alb in album_list:
+        title = alb.get("title", "").strip().lower()
+        if not title:
+            deduped_no_title.append(alb)
+        else:
+            if title not in groups:
+                groups[title] = []
+            groups[title].append(alb)
+            
+    deduped = list(deduped_no_title)
+    for title, versions in groups.items():
+        best_alb = None
+        best_score = -100
+        
+        for alb in versions:
+            score = 0
+            is_explicit = alb.get("explicit", False)
+            q = alb.get("audioQuality", "")
+            
+            # Quality base score
+            if q in ["HI_RES", "HI_RES_LOSSLESS", "HIRES_LOSSLESS"]: score += 10
+            elif q == "LOSSLESS": score += 8
+            elif q == "HIGH": score += 5
+            elif q == "LOW": score -= 5
+            
+            # Penalty for Atmos/Sony360 because they might not play right on standard clients
+            tags = alb.get("mediaMetadata", {}).get("tags", [])
+            if "DOLBY_ATMOS" in tags or "SONY_360RA" in tags:
+                score -= 10
+            
+            # Preference score
+            if pref == "explicit" and is_explicit:
+                score += 50
+            elif pref == "clean" and not is_explicit:
+                score += 50
+                
+            if score > best_score:
+                best_score = score
+                best_alb = alb
+                
+        if best_alb:
+            deduped.append(best_alb)
+            
+    return deduped
+
+
 async def fetch_artist_albums(artist_id: int, artist_name: str = "") -> list:
     """
     Fetch all albums for an artist using the upstream's direct endpoint.
@@ -263,63 +318,13 @@ async def fetch_artist_albums(artist_id: int, artist_name: str = "") -> list:
     Returns:
         List of album dicts that belong to this artist.
     """
-    def preference_deduplicator(album_list: list) -> list:
-        pref = settings.EXPLICIT_CONTENT_FILTER.lower()
-        groups = {}
-        deduped_no_title = []
-        
-        for alb in album_list:
-            title = alb.get("title", "").strip().lower()
-            if not title:
-                deduped_no_title.append(alb)
-            else:
-                if title not in groups:
-                    groups[title] = []
-                groups[title].append(alb)
-                
-        deduped = list(deduped_no_title)
-        for title, versions in groups.items():
-            best_alb = None
-            best_score = -100
-            
-            for alb in versions:
-                score = 0
-                is_explicit = alb.get("explicit", False)
-                q = alb.get("audioQuality", "")
-                
-                # Quality base score
-                if q in ["HI_RES", "HI_RES_LOSSLESS", "HIRES_LOSSLESS"]: score += 10
-                elif q == "LOSSLESS": score += 8
-                elif q == "HIGH": score += 5
-                elif q == "LOW": score -= 5
-                
-                # Penalty for Atmos/Sony360 because they might not play right on standard clients
-                tags = alb.get("mediaMetadata", {}).get("tags", [])
-                if "DOLBY_ATMOS" in tags or "SONY_360RA" in tags:
-                    score -= 10
-                
-                # Preference score
-                if pref == "explicit" and is_explicit:
-                    score += 50
-                elif pref == "clean" and not is_explicit:
-                    score += 50
-                    
-                if score > best_score:
-                    best_score = score
-                    best_alb = alb
-                    
-            if best_alb:
-                deduped.append(best_alb)
-                
-        return deduped
-
     try:
         # Use the upstream's direct /artist/?f={id} endpoint
         res = await hifi_client.get_artist_albums(artist_id)
         albums_data = res.get("albums", {}) if isinstance(res, dict) else {}
         items = albums_data.get("items", [])
         if items:
-            return preference_deduplicator(items)
+            return _preference_deduplicator(items)
     except Exception as e:
         logger.warning("Failed to fetch albums for artist %s, falling back to search: %s", artist_id, e)
 
@@ -355,7 +360,7 @@ async def fetch_artist_albums(artist_id: int, artist_name: str = "") -> list:
         if match:
             matched.append(it)
 
-    return preference_deduplicator(matched)
+    return _preference_deduplicator(matched)
 
 
 async def add_tracks_to_playlist(session, pl, track_ids: list[str]) -> None:
@@ -365,10 +370,6 @@ async def add_tracks_to_playlist(session, pl, track_ids: list[str]) -> None:
     """
     if not track_ids:
         return
-        
-    import asyncio
-    from sqlalchemy.future import select
-    from app.models import PlaylistEntry
     
     # Get current max position
     pos_stmt = select(PlaylistEntry).where(PlaylistEntry.playlist_id == pl.id)

@@ -18,6 +18,12 @@ from app.routers.common import common_params, extract_track_metadata, fetch_trac
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Pre-compiled patterns (avoid recompiling on every request)
+_UUID_PATTERN = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE
+)
+_LRC_PATTERN = re.compile(r'\[(\d{2}):(\d{2})\.(\d{2,3})\]\s?(.*)')
+
 
 @router.get("/rest/getCoverArt.view")
 @router.get("/rest/getCoverArt")
@@ -52,9 +58,7 @@ async def get_cover_art(
         else:
             target_size = 1280
 
-    uuid_pattern = re.compile(
-        r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE
-    )
+    uuid_pattern = _UUID_PATTERN
 
     clean_id = real_id
     type_hint = "album"  # default
@@ -115,7 +119,7 @@ async def get_cover_art(
 async def stream(
     id: str = Query(None),
     maxBitRate: Optional[int] = Query(None),
-    format: Optional[str] = Query(None),
+    fmt: Optional[str] = Query(None, alias="format"),
     id_form: str = Form(None, alias="id"),
     maxBitRate_form: Optional[int] = Form(None, alias="maxBitRate"),
     format_form: Optional[str] = Form(None, alias="format"),
@@ -129,7 +133,7 @@ async def stream(
     if not real_id:
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=commons["f"])
     maxBitRate = maxBitRate_form if maxBitRate_form is not None else maxBitRate
-    format = format_form if format_form is not None else format
+    req_format = format_form if format_form is not None else fmt
 
     try:
         track_id = resolve_id(real_id)
@@ -145,7 +149,7 @@ async def stream(
         elif maxBitRate <= 320:
             quality = "HIGH"
             
-    if format and format.lower() in ("m4a", "mp3"):
+    if req_format and req_format.lower() in ("m4a", "mp3"):
         # Forcing a lossy format
         quality = "HIGH"
 
@@ -267,7 +271,7 @@ async def get_lyrics_by_song_id(
             track_title = t.get("title") or "Unknown"
         
         # Parse LRC format into structured lines
-        lrc_pattern = re.compile(r'\[(\d{2}):(\d{2})\.(\d{2,3})\]\s?(.*)')
+        lrc_pattern = _LRC_PATTERN
         lines = []
         is_synced = False
         

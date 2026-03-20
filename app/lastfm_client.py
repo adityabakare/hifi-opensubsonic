@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class LastFmClient:
     def __init__(self):
-        self.base_url = "http://ws.audioscrobbler.com/2.0/"
+        self.base_url = "https://ws.audioscrobbler.com/2.0/"
         self.client = httpx.AsyncClient(timeout=10.0)
 
     def is_configured(self) -> bool:
