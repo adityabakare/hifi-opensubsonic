@@ -46,10 +46,10 @@ class LastFmClient:
             data = resp.json()
             if "session" in data and "key" in data["session"]:
                 return data["session"]["key"]
-            logger.error(f"Last.fm getSession error: {data}")
+            logger.error("Last.fm getSession error: %s", data)
             return None
         except Exception as e:
-            logger.error(f"Failed to get Last.fm session: {e}")
+            logger.error("Failed to get Last.fm session: %s", e)
             return None
 
     async def scrobble_track(self, session_key: str, artist: str, track: str, timestamp: int, album: Optional[str] = None):
@@ -76,6 +76,7 @@ class LastFmClient:
 
         try:
             resp = await self.client.post(self.base_url, data=params)
+            resp.raise_for_status()
             logger.info("Successfully scrobbled to Last.fm: %s - %s", artist, track)
             return True
         except httpx.HTTPError as e:

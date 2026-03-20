@@ -34,7 +34,7 @@ class Playlist(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
     name: str
-    comment: Optional[str] = ""
+    comment: Optional[str] = None
     public: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True)))
     changed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True)))
@@ -63,11 +63,11 @@ class PlaylistEntry(SQLModel, table=True):
     year: Optional[int] = None
     track_number: Optional[int] = None
     disc_number: Optional[int] = None
-    bit_rate: Optional[int] = 1411
-    bit_depth: Optional[int] = 16
-    sampling_rate: Optional[int] = 44100
-    suffix: Optional[str] = "flac"
-    content_type: Optional[str] = "audio/flac"
+    bit_rate: Optional[int] = None
+    bit_depth: Optional[int] = None
+    sampling_rate: Optional[int] = None
+    suffix: Optional[str] = None
+    content_type: Optional[str] = None
     bpm: Optional[int] = None
     is_video: bool = False
     is_dir: bool = False

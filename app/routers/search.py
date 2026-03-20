@@ -5,10 +5,9 @@ from fastapi import APIRouter, Depends, Query, Form, Request
 import asyncio
 from typing import Optional
 
-from app.config import settings
 from app.hifi_client import hifi_client
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, get_track_format, extract_track_metadata, is_video_album
+from app.routers.common import common_params, extract_track_metadata, is_video_album
 
 router = APIRouter()
 

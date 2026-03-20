@@ -187,10 +187,10 @@ async def stream(
                         return RedirectResponse(match_base.group(1))
 
             except Exception as e:
-                logger.warning(f"Manifest decode error: {e}")
+                logger.warning("Manifest decode error: %s", e)
                 
     except Exception as e:
-        logger.error(f"Stream error: {e}")
+        logger.error("Stream error: %s", e)
         
     return SubsonicResponse.error(70, "Stream not found", fmt=commons["f"])
 
@@ -222,7 +222,7 @@ async def get_song(
                 "song": track
             }, fmt=commons["f"])
     except Exception as e:
-        logger.error(f"Failed to get song {track_id}: {e}")
+        logger.error("Failed to get song %s: %s", track_id, e)
         
     return SubsonicResponse.error(70, "Song not found", fmt=commons["f"])
 
@@ -306,7 +306,7 @@ async def get_lyrics_by_song_id(
         }, fmt=commons["f"])
                 
     except Exception as e:
-        logger.warning(f"Lyrics fetch failed for {real_id}: {e}")
+        logger.warning("Lyrics fetch failed for %s: %s", real_id, e)
         
     return SubsonicResponse.error(70, "Lyrics not found", fmt=commons["f"])
 
@@ -362,6 +362,6 @@ async def get_lyrics(
                 }, fmt=commons["f"])
 
     except Exception as e:
-        logger.warning(f"Lyrics search/fetch failed for {query}: {e}")
+        logger.warning("Lyrics search/fetch failed for %s: %s", query, e)
 
     return SubsonicResponse.error(70, "Lyrics not found", fmt=commons["f"])

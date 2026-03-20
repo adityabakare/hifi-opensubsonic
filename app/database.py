@@ -36,9 +36,9 @@ async def init_db():
             return
         except Exception as e:
             if i == retries - 1:
-                logger.error(f"Failed to connect to database after {retries} attempts.")
+                logger.error("Failed to connect to database after %d attempts.", retries)
                 raise e
-            logger.warning(f"Database connection failed ({e}), retrying in {delay}s...")
+            logger.warning("Database connection failed (%s), retrying in %ds...", e, delay)
             await asyncio.sleep(delay)
 
 

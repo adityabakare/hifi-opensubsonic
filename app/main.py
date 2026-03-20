@@ -2,7 +2,7 @@ import os
 import logging
 import secrets
 import string
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
@@ -12,7 +12,6 @@ from app.auth import get_user_by_username, create_user
 from app.hifi_client import hifi_client
 from app.lastfm_client import lastfm_client
 from app.database import async_session, init_db
-from fastapi import Request
 
 from contextlib import asynccontextmanager
 

@@ -1,3 +1,4 @@
+import copy
 from typing import Any, Dict
 import xmltodict
 from fastapi import Response
@@ -49,7 +50,7 @@ class SubsonicResponse:
             # We need to ensure status and version are attributes (@ prefixed)
             
             # Deep copy or new dict to avoid mutating original for other uses
-            xml_data = wrapped_data.copy()
+            xml_data = copy.deepcopy(wrapped_data)
             root = xml_data.get("subsonic-response", {})
             
             # Remap specific top-level keys to attributes for XML

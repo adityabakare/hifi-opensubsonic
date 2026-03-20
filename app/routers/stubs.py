@@ -2,9 +2,8 @@
 Stub endpoints for Subsonic API compliance.
 These endpoints return empty or acknowledgement responses.
 """
-from fastapi import APIRouter, Depends, Query, Form
+from fastapi import APIRouter, Depends
 
-from app.config import settings
 from app.responses import SubsonicResponse
 from app.routers.common import common_params
 
