@@ -175,6 +175,11 @@ class HifiClient:
         key = _make_key("similar_artists", artist_id)
         return await cached_call(similar_cache, key, lambda: self._get("/artist/similar/", params={"id": artist_id}))
 
+    async def get_artist_top_tracks(self, artist_id: int):
+        """Get an artist's top tracks via /artist/?f={id} (tracks sorted by popularity)."""
+        key = _make_key("artist_top_tracks", artist_id)
+        return await cached_call(artist_cache, key, lambda: self._get("/artist/", params={"f": artist_id}))
+
     async def get_track(self, track_id: int, quality: str = "LOSSLESS"):
         """Get track streaming info (manifest/url). NOT cached — URLs are time-limited."""
         return await self._get("/track/", params={"id": track_id, "quality": quality})

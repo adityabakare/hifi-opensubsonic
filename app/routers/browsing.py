@@ -583,11 +583,123 @@ async def get_album_list(
     return SubsonicResponse.create({key: {"album": page}}, fmt=f)
 
 
+@router.get("/rest/getTopSongs.view")
+@router.get("/rest/getTopSongs")
+@router.post("/rest/getTopSongs.view")
+@router.post("/rest/getTopSongs")
+async def get_top_songs(
+    artist: str = Query(None),
+    count: int = Query(50),
+    artist_form: str = Form(None, alias="artist"),
+    count_form: int = Form(None, alias="count"),
+    commons: dict = Depends(common_params),
+):
+    """
+    Returns top songs for a given artist name.
+    Searches for the artist upstream, then fetches their top tracks.
+    """
+    f = commons["f"]
+    artist_name = artist or artist_form
+    final_count = count_form if count_form is not None else count
+
+    if not artist_name:
+        return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
+
+    try:
+        # Search for the artist to get their ID
+        search_res = await hifi_client.search_artists(artist_name)
+        root = search_res.get("data", search_res) if isinstance(search_res, dict) else {}
+        artist_items = root.get("artists", {}).get("items", [])
+        if not artist_items:
+            artist_items = root.get("items", [])
+
+        if not artist_items:
+            return SubsonicResponse.create({"topSongs": {"song": []}}, fmt=f)
+
+        artist_id = artist_items[0].get("id")
+        if not artist_id:
+            return SubsonicResponse.create({"topSongs": {"song": []}}, fmt=f)
+
+        # Fetch top tracks via /artist/?f={id}
+        data = await hifi_client.get_artist_top_tracks(artist_id)
+        tracks = data.get("tracks", []) if isinstance(data, dict) else []
+
+        songs = []
+        for track in tracks[:final_count]:
+            songs.append(extract_track_metadata(track))
+
+        return SubsonicResponse.create({"topSongs": {"song": songs}}, fmt=f)
+
+    except Exception as e:
+        logger.warning("getTopSongs failed for '%s': %s", artist_name, e)
+        return SubsonicResponse.error(0, str(e), fmt=f)
+
+
+@router.get("/rest/getRandomSongs.view")
+@router.get("/rest/getRandomSongs")
+@router.post("/rest/getRandomSongs.view")
+@router.post("/rest/getRandomSongs")
+async def get_random_songs(
+    size: int = Query(10),
+    genre: str = Query(None),
+    fromYear: int = Query(None),
+    toYear: int = Query(None),
+    musicFolderId: Optional[str] = Query(None),
+    size_form: int = Form(None, alias="size"),
+    genre_form: str = Form(None, alias="genre"),
+    fromYear_form: int = Form(None, alias="fromYear"),
+    toYear_form: int = Form(None, alias="toYear"),
+    musicFolderId_form: Optional[str] = Form(None, alias="musicFolderId"),
+    commons: dict = Depends(common_params),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Returns random songs from the user's starred songs.
+    """
+    user = commons["user"]
+    f = commons["f"]
+    final_size = size_form if size_form is not None else size
+
+    # Fetch all starred songs for this user
+    stmt = select(Star).where(Star.user_id == user.id, Star.item_type == "song")
+    result = await session.execute(stmt)
+    song_stars = result.scalars().all()
+
+    if not song_stars:
+        return SubsonicResponse.create({"randomSongs": {"song": []}}, fmt=f)
+
+    # Shuffle and take a slice
+    random.shuffle(song_stars)
+    selected = song_stars[:final_size]
+
+    # Fetch metadata concurrently
+    async def fetch_song_meta(star: Star):
+        try:
+            numeric_id = resolve_id(star.item_id)
+            data = await hifi_client.get_track_info(numeric_id)
+            d = data.get("data", {}) if data else {}
+            if d:
+                return extract_track_metadata(d)
+        except Exception as e:
+            logger.warning("Failed to fetch track metadata for %s: %s", star.item_id, e)
+        return None
+
+    results = await asyncio.gather(*[fetch_song_meta(s) for s in selected])
+    songs = [s for s in results if s is not None]
+
+    return SubsonicResponse.create({"randomSongs": {"song": songs}}, fmt=f)
+
+
+@router.get("/rest/getIndexes.view")
+@router.get("/rest/getIndexes")
+@router.post("/rest/getIndexes.view")
+@router.post("/rest/getIndexes")
 @router.get("/rest/getArtists.view")
 @router.get("/rest/getArtists")
 @router.post("/rest/getArtists.view")
 @router.post("/rest/getArtists")
 async def get_artists(
+    request: Request,
     musicFolderId: Optional[str] = Query(None),
     musicFolderId_form: Optional[str] = Form(None, alias="musicFolderId"),
     commons: dict = Depends(common_params),
@@ -596,6 +708,7 @@ async def get_artists(
     """
     Returns a list of all artists. Uses starred artists as the data source,
     grouped by the first letter of the artist's name.
+    Also serves getIndexes (same data, different response wrapper).
     """
     user = commons["user"]
     f = commons["f"]
@@ -659,9 +772,15 @@ async def get_artists(
         indices[group_name]["artist"].sort(key=lambda a: a.get("name", "").lower())
         sorted_groups.append(indices[group_name])
 
-    return SubsonicResponse.create({
-        "artists": {
-            "ignoredArticles": "The El La Los Las Le Les",
-            "index": sorted_groups
-        }
-    }, fmt=f)
+    is_indexes = "getIndexes" in request.url.path
+    key = "indexes" if is_indexes else "artists"
+
+    body = {
+        "ignoredArticles": "The El La Los Las Le Les",
+        "index": sorted_groups
+    }
+    if is_indexes:
+        body["lastModified"] = 0
+        body["child"] = []
+
+    return SubsonicResponse.create({key: body}, fmt=f)

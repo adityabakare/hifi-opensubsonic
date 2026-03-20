@@ -1,7 +1,7 @@
 """
 Search endpoints for music discovery.
 """
-from fastapi import APIRouter, Depends, Query, Form
+from fastapi import APIRouter, Depends, Query, Form, Request
 import asyncio
 from typing import Optional
 
@@ -13,11 +13,16 @@ from app.routers.common import common_params, get_track_format, extract_track_me
 router = APIRouter()
 
 
+@router.get("/rest/search2.view")
+@router.get("/rest/search2")
+@router.post("/rest/search2.view")
+@router.post("/rest/search2")
 @router.get("/rest/search3.view")
 @router.get("/rest/search3")
 @router.post("/rest/search3.view")
 @router.post("/rest/search3")
 async def search3(
+    request: Request,
     query: str = Query(None),
     songCount: int = Query(20),
     albumCount: int = Query(20),
@@ -114,8 +119,11 @@ async def search3(
                     "isDir": True
                 })
 
+        is_v2 = "search2" in request.url.path
+        key = "searchResult2" if is_v2 else "searchResult3"
+
         return SubsonicResponse.create({
-            "searchResult3": {
+            key: {
                 "song": songs[songOffset : songOffset + songCount],
                 "artist": artists[artistOffset : artistOffset + artistCount],
                 "album": albums[albumOffset : albumOffset + albumCount]

@@ -21,49 +21,6 @@ async def get_genres(commons: dict = Depends(common_params)):
     }, fmt=commons["f"])
 
 
-@router.get("/rest/getIndexes.view")
-@router.get("/rest/getIndexes")
-@router.post("/rest/getIndexes.view")
-@router.post("/rest/getIndexes")
-async def get_indexes(commons: dict = Depends(common_params)):
-    """
-    Stub for folder index. Returns empty.
-    """
-    return SubsonicResponse.create({
-        "indexes": {
-            "lastModified": 0,
-            "index": [],
-            "child": [],
-            "ignoredArticles": "The El La Los Las Le Les"
-        }
-    }, fmt=commons["f"])
-
-
-@router.get("/rest/search2.view")
-@router.get("/rest/search2")
-async def search2_stub(query: str, commons: dict = Depends(common_params)):
-    """
-    Stub for legacy Search2.
-    """
-    return SubsonicResponse.create({
-        "searchResult2": {
-            "artist": [],
-            "album": [],
-            "song": []
-        }
-    }, fmt=commons["f"])
-
-
-@router.get("/rest/getTopSongs.view")
-@router.get("/rest/getTopSongs")
-@router.get("/rest/getRandomSongs.view")
-@router.get("/rest/getRandomSongs")
-async def get_random_songs_stub(commons: dict = Depends(common_params)):
-    return SubsonicResponse.create({
-        "randomSongs": {"song": []}
-    }, fmt=commons["f"])
-
-
 @router.get("/rest/getNowPlaying.view")
 @router.get("/rest/getNowPlaying")
 async def get_now_playing_stub(commons: dict = Depends(common_params)):
