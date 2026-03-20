@@ -590,8 +590,8 @@ async def get_album_list(
 async def get_top_songs(
     artist: str = Query(None),
     count: int = Query(50),
-    artist_form: str = Form(None, alias="artist"),
-    count_form: int = Form(None, alias="count"),
+    artist_form: Optional[str] = Form(None, alias="artist"),
+    count_form: Optional[int] = Form(None, alias="count"),
     commons: dict = Depends(common_params),
 ):
     """
