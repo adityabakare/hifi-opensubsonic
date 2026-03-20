@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:15-alpine
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-subsonic}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-subsonic}
@@ -9,7 +9,7 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U subsonic"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-subsonic}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -19,16 +19,15 @@ services:
   hifi:
     container_name: hifi
     build: .
-    restart: always
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${HIFI_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
+    env_file: .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-subsonic}:${POSTGRES_PASSWORD:-subsonic}@db:5432/${POSTGRES_DB:-subsonic}
-      - JWT_SECRET=${JWT_SECRET}
-      - TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}
     networks:
       - hifi-net
 

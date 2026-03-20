@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     CIRCUIT_BREAKER_RECOVERY: int = 30        # Seconds before retrying a tripped instance
     UPSTREAM_MAX_RETRIES: int = 3             # Retry rounds when all instances are open
     UPSTREAM_RETRY_DELAY: float = 2.0         # Seconds between retry rounds
+    COOKIE_SECURE: bool = True                # True = HTTPS only cookies, False = allow HTTP
+    ALLOW_PUBLIC_REGISTRATION: bool = False    # Allow unauthenticated user registration via web UI
 
     class Config:
         env_file = ".env"

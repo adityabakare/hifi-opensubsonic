@@ -181,7 +181,9 @@ async def create_user_admin(
     return SubsonicResponse.create({}, fmt=f)
 
 @router.post("/api/register")
+@limiter.limit("3/minute")
 async def register_public_user(
+    request: Request,
     payload: RegisterRequest,
     response: Response,
     session: AsyncSession = Depends(get_session)
@@ -190,6 +192,9 @@ async def register_public_user(
     Public, unauthenticated endpoint to register a new user from the Web UI.
     Always enforces is_admin=False and automatically logs the user in upon success.
     """
+    if not settings.ALLOW_PUBLIC_REGISTRATION:
+        return {"status": "error", "message": "Public registration is disabled"}
+
     if not payload.username or not payload.password:
         return {"status": "error", "message": "Username and password are required"}
         
@@ -212,7 +217,7 @@ async def register_public_user(
             key="auth_token",
             value=token,
             httponly=True,
-            secure=False,
+            secure=settings.COOKIE_SECURE,
             samesite="lax",
             max_age=settings.JWT_EXPIRATION_HOURS * 3600
         )
@@ -235,7 +240,7 @@ async def login_public_user(
         key="auth_token",
         value=token,
         httponly=True,
-        secure=False,
+        secure=settings.COOKIE_SECURE,
         samesite="lax",
         max_age=settings.JWT_EXPIRATION_HOURS * 3600
     )
@@ -243,7 +248,7 @@ async def login_public_user(
 
 @router.post("/api/logout")
 async def logout_user(response: Response):
-    response.delete_cookie(key="auth_token", httponly=True, secure=False, samesite="lax")
+    response.delete_cookie(key="auth_token", httponly=True, secure=settings.COOKIE_SECURE, samesite="lax")
     return {"status": "ok", "message": "Logged out successfully"}
 
 @router.get("/api/me")

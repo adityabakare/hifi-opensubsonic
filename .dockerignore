@@ -1,6 +1,12 @@
 .git
+.github
 .venv
+.env
+.pytest_cache
 __pycache__
 *.pyc
+*.pyo
 .DS_Store
 tests/
+web-ui/node_modules
+web-ui/dist
