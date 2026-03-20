@@ -52,36 +52,37 @@ async def get_music_directory(
     real_id = id or id_form
     if not real_id:
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
-        
-    id = real_id # Use merged ID
-    
+
+    id = real_id  # Use merged ID
+
     # Virtual Root
     if id == "1" or id == "root":
         return SubsonicResponse.create({
             "directory": {
                 "id": id,
                 "name": "Tidal",
-                "child": [] 
+                "child": []
             }
         }, fmt=f)
-    
+
     try:
         # Artist Folder -> Returns Albums
         if id.startswith("artist-") or id.startswith("ar-"):
             artist_id = resolve_id(id)
-            
+
             # Fetch artist info and albums concurrently
             info_res, albums_data = await asyncio.gather(
                 hifi_client.get_artist(artist_id),
                 fetch_artist_albums(artist_id)
             )
-            artist_info = info_res.get("artist", {}) if isinstance(info_res, dict) else {}
-            
+            artist_info = info_res.get(
+                "artist", {}) if isinstance(info_res, dict) else {}
+
             children = []
             for alb in albums_data:
                 cover_uuid = alb.get("cover")
                 cover_art_id = cover_uuid if cover_uuid else f"al-{alb['id']}"
-                
+
                 children.append({
                     "id": f"al-{alb['id']}",
                     "parent": id,
@@ -90,7 +91,7 @@ async def get_music_directory(
                     "isDir": True,
                     "coverArt": cover_art_id
                 })
-            
+
             return SubsonicResponse.create({
                 "directory": {
                     "id": id,
@@ -98,24 +99,26 @@ async def get_music_directory(
                     "child": children
                 }
             }, fmt=f)
-            
+
         # Album Folder -> Returns Tracks
         elif id.startswith("album-") or id.startswith("al-"):
             real_id = resolve_id(id)
             data = await hifi_client.get_album(real_id)
             items = data.get("data", {}).get("items", [])
             children = []
-            
+
             album_cover_uuid = data.get("data", {}).get("cover")
-            
+
             for entry in items:
                 item = entry.get("item", entry)
                 track_meta = extract_track_metadata(item)
                 # Override with album-level data
-                cover_uuid = item.get("album", {}).get("cover") or album_cover_uuid
+                cover_uuid = item.get("album", {}).get(
+                    "cover") or album_cover_uuid
                 track_meta["coverArt"] = cover_uuid if cover_uuid else f"al-{real_id}"
                 track_meta["parent"] = id
-                track_meta["album"] = data.get("data", {}).get("title") or track_meta["album"]
+                track_meta["album"] = data.get("data", {}).get(
+                    "title") or track_meta["album"]
                 track_meta["albumId"] = f"al-{real_id}"
                 children.append(track_meta)
 
@@ -126,7 +129,7 @@ async def get_music_directory(
                     "child": children
                 }
             }, fmt=f)
-            
+
         else:
             return SubsonicResponse.error(70, "Folder not found", fmt=f)
 
@@ -148,7 +151,7 @@ async def get_artist(
     if not real_id:
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
     id = real_id
-    
+
     try:
         artist_id = resolve_id(id)
     except ValueError:
@@ -160,8 +163,9 @@ async def get_artist(
             hifi_client.get_artist(artist_id),
             fetch_artist_albums(artist_id)
         )
-        artist_info = info_res.get("artist", {}) if isinstance(info_res, dict) else {}
-                    
+        artist_info = info_res.get(
+            "artist", {}) if isinstance(info_res, dict) else {}
+
         albums = []
         for alb in albums_items:
             cover_uuid = alb.get("cover")
@@ -183,7 +187,7 @@ async def get_artist(
             "artist": {
                 "id": f"ar-{artist_id}",
                 "name": artist_info.get("name"),
-                "coverArt": cover_art_id, 
+                "coverArt": cover_art_id,
                 "albumCount": len(albums),
                 "album": albums
             }
@@ -206,7 +210,7 @@ async def get_album_endpoint(
     real_id = id or id_form
     if not real_id:
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
-    
+
     try:
         album_id = resolve_id(real_id)
     except ValueError:
@@ -215,11 +219,11 @@ async def get_album_endpoint(
     try:
         data = await hifi_client.get_album(album_id)
         d = data.get("data", {}) if data else {}
-        
+
         items = d.get("items", [])
         songs = []
         album_cover_uuid = d.get("cover")
-        
+
         for entry in items:
             item = entry.get("item", entry)
             track_meta = extract_track_metadata(item)
@@ -267,7 +271,7 @@ async def get_album_info2(
     real_id = id or id_form
     if not real_id:
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
-        
+
     try:
         album_id = resolve_id(real_id)
     except ValueError:
@@ -276,7 +280,7 @@ async def get_album_info2(
     try:
         data = await hifi_client.get_album(album_id)
         d = data.get("data", {}) if data else {}
-        
+
         if not d:
             return SubsonicResponse.error(70, "Album not found", fmt=f)
 
@@ -287,7 +291,7 @@ async def get_album_info2(
             notes.append(d['copyright'])
         if d.get("upc"):
             notes.append(f"UPC: {d['upc']}")
-            
+
         note_text = " \n".join(notes)
 
         cover_uuid = d.get("cover")
@@ -315,6 +319,7 @@ async def get_album_info2(
     except Exception as e:
         return SubsonicResponse.error(0, str(e), fmt=f)
 
+
 @router.get("/rest/getArtistInfo.view")
 @router.get("/rest/getArtistInfo")
 @router.post("/rest/getArtistInfo.view")
@@ -327,29 +332,29 @@ async def get_artist_info_endpoint(
     id: str = Query(None),
     count: int = Query(20),
     includeNotPresent: bool = Query(False),
-    
+
     id_form: str = Form(None, alias="id"),
     count_form: int = Form(None, alias="count"),
-    
+
     commons: dict = Depends(common_params)
 ):
     """
     Get artist details and similar artists.
     """
     f = commons["f"]
-    
+
     real_id = id or id_form
     if not real_id:
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
     id = real_id
-    
+
     count = count_form if count_form is not None else count
-    
+
     try:
         artist_id = resolve_id(real_id)
     except ValueError:
         return SubsonicResponse.error(70, "Artist not found", fmt=f)
-    
+
     try:
         # Fetch artist data and similar artists in parallel
         artist_res, similar_res = await asyncio.gather(
@@ -362,29 +367,31 @@ async def get_artist_info_endpoint(
         artist_data = {}
         cover_urls = {}
         if isinstance(artist_res, dict):
-            artist_data = artist_res.get("artist", {}) or artist_res.get("data", {})
-            
+            artist_data = artist_res.get(
+                "artist", {}) or artist_res.get("data", {})
+
             # Extract cover URLs if available
             picture_uuid = artist_data.get("picture")
             if picture_uuid:
                 slug = picture_uuid.replace("-", "/")
                 cover_urls = {
-                   "small": f"https://resources.tidal.com/images/{slug}/320x320.jpg",
-                   "medium": f"https://resources.tidal.com/images/{slug}/640x640.jpg",
-                   "large": f"https://resources.tidal.com/images/{slug}/750x750.jpg" 
+                    "small": f"https://resources.tidal.com/images/{slug}/320x320.jpg",
+                    "medium": f"https://resources.tidal.com/images/{slug}/640x640.jpg",
+                    "large": f"https://resources.tidal.com/images/{slug}/750x750.jpg"
                 }
-        
+
         # Process Similar Artists
         similar_artists = []
         if isinstance(similar_res, dict):
             # API returns { "artists": [ ... ] } or { "data": [ ... ] } depending on endpoint wrapper
-            sim_list = similar_res.get("artists", []) or similar_res.get("data", [])
+            sim_list = similar_res.get(
+                "artists", []) or similar_res.get("data", [])
             for sim in sim_list[:count]:
                 sid = sim.get("id")
                 sname = sim.get("name")
                 if sid and sname:
-                    
-                     # Extract cover for similar artist
+
+                    # Extract cover for similar artist
                     spic = sim.get("picture")
                     s_cover = None
                     if spic:
@@ -394,14 +401,14 @@ async def get_artist_info_endpoint(
                     similar_artists.append({
                         "id": f"ar-{sid}",
                         "name": sname,
-                        "coverArt": f"ar-{sid}", # Fallback or actual ID
-                        "albumCount": 0, # Not provided by similar endpoint
+                        "coverArt": f"ar-{sid}",  # Fallback or actual ID
+                        "albumCount": 0,  # Not provided by similar endpoint
                         "imageUrl": s_cover
                     })
 
         # Construct Response
         info = {
-            "biography": "", # Tidal API doesn't provide bio in standard endpoint
+            "biography": "",  # Tidal API doesn't provide bio in standard endpoint
             "musicBrainzId": "",
             "lastFmUrl": f"https://www.last.fm/music/{artist_data.get('name', '').replace(' ', '+')}",
             "smallImageUrl": cover_urls.get("small"),
@@ -416,6 +423,7 @@ async def get_artist_info_endpoint(
 
     except Exception as e:
         return SubsonicResponse.error(0, str(e), fmt=f)
+
 
 @router.get("/rest/getSimilarSongs.view")
 @router.get("/rest/getSimilarSongs")
@@ -441,35 +449,35 @@ async def get_similar_songs_endpoint(
     real_id = id or id_form
     if not real_id:
         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
-        
+
     count_val = count_form if count_form is not None else count
-    
+
     try:
         track_id = resolve_id(real_id)
     except ValueError:
         return SubsonicResponse.error(70, "Track not found", fmt=f)
-        
+
     try:
         data = await hifi_client.get_similar_tracks(track_id)
         d = data.get("data", {}) if data else {}
         items = d.get("items", [])
-        
+
         songs = []
         for entry in items[:count_val]:
             item = entry.get("track", entry)
             if item:
                 track_meta = extract_track_metadata(item)
                 songs.append(track_meta)
-                
+
         is_v2 = "getSimilarSongs2" in request.url.path
         key = "similarSongs2" if is_v2 else "similarSongs"
-        
+
         return SubsonicResponse.create({
             key: {
                 "song": songs
             }
         }, fmt=f)
-        
+
     except Exception as e:
         return SubsonicResponse.error(0, str(e), fmt=f)
 
@@ -515,7 +523,8 @@ async def get_album_list(
     final_to_year = toYear_form if toYear_form is not None else toYear
 
     # Fetch all starred albums for this user
-    stmt = select(Star).where(Star.user_id == user.id, Star.item_type == "album")
+    stmt = select(Star).where(Star.user_id ==
+                              user.id, Star.item_type == "album")
     result = await session.execute(stmt)
     album_stars = result.scalars().all()
 
@@ -549,7 +558,8 @@ async def get_album_list(
                     "_starred_at": star.created_at,
                 }
         except Exception as e:
-            logger.warning("Failed to fetch album metadata for %s: %s", star.item_id, e)
+            logger.warning(
+                "Failed to fetch album metadata for %s: %s", star.item_id, e)
         return None
 
     results = await asyncio.gather(*[fetch_album_meta(s) for s in album_stars])
@@ -567,7 +577,8 @@ async def get_album_list(
     elif final_type == "alphabeticalByArtist":
         albums.sort(key=lambda a: (a.get("artist") or "").lower())
     elif final_type == "byYear" and final_from_year is not None and final_to_year is not None:
-        lo, hi = min(final_from_year, final_to_year), max(final_from_year, final_to_year)
+        lo, hi = min(final_from_year, final_to_year), max(
+            final_from_year, final_to_year)
         albums = [a for a in albums if a.get("year") and lo <= a["year"] <= hi]
         ascending = final_from_year <= final_to_year
         albums.sort(key=lambda a: a.get("year") or 0, reverse=not ascending)
@@ -577,11 +588,10 @@ async def get_album_list(
     for a in albums:
         a.pop("_starred_at", None)
 
-    page = albums[final_offset : final_offset + final_size]
+    page = albums[final_offset: final_offset + final_size]
 
     is_v2 = "AlbumList2" in request.url.path or "albumList2" in request.url.path
     key = "albumList2" if is_v2 else "albumList"
-
 
     return SubsonicResponse.create({key: {"album": page}}, fmt=f)
 
@@ -611,7 +621,8 @@ async def get_top_songs(
     try:
         # Search for the artist to get their ID
         search_res = await hifi_client.search_artists(artist_name)
-        root = search_res.get("data", search_res) if isinstance(search_res, dict) else {}
+        root = search_res.get("data", search_res) if isinstance(
+            search_res, dict) else {}
         artist_items = root.get("artists", {}).get("items", [])
         if not artist_items:
             artist_items = root.get("items", [])
@@ -664,7 +675,8 @@ async def get_random_songs(
     final_size = size_form if size_form is not None else size
 
     # Fetch all starred songs for this user
-    stmt = select(Star).where(Star.user_id == user.id, Star.item_type == "song")
+    stmt = select(Star).where(Star.user_id ==
+                              user.id, Star.item_type == "song")
     result = await session.execute(stmt)
     song_stars = result.scalars().all()
 
@@ -684,7 +696,8 @@ async def get_random_songs(
             if d:
                 return extract_track_metadata(d)
         except Exception as e:
-            logger.warning("Failed to fetch track metadata for %s: %s", star.item_id, e)
+            logger.warning(
+                "Failed to fetch track metadata for %s: %s", star.item_id, e)
         return None
 
     results = await asyncio.gather(*[fetch_song_meta(s) for s in selected])
@@ -717,7 +730,8 @@ async def get_artists(
     f = commons["f"]
 
     # Fetch all starred artists for this user
-    stmt = select(Star).where(Star.user_id == user.id, Star.item_type == "artist")
+    stmt = select(Star).where(Star.user_id ==
+                              user.id, Star.item_type == "artist")
     result = await session.execute(stmt)
     artist_stars = result.scalars().all()
 
@@ -734,7 +748,8 @@ async def get_artists(
         try:
             numeric_id = resolve_id(star.item_id)
             data = await hifi_client.get_artist(numeric_id)
-            artist_data = data.get("artist", {}) if isinstance(data, dict) else {}
+            artist_data = data.get(
+                "artist", {}) if isinstance(data, dict) else {}
             if artist_data:
                 cover_uuid = artist_data.get("picture")
                 return {
@@ -746,7 +761,8 @@ async def get_artists(
                     "_sort_name": (artist_data.get("name") or "Unknown Format").upper()
                 }
         except Exception as e:
-            logger.warning("Failed to fetch artist metadata for %s: %s", star.item_id, e)
+            logger.warning(
+                "Failed to fetch artist metadata for %s: %s", star.item_id, e)
         return None
 
     results = await asyncio.gather(*[fetch_artist_meta(s) for s in artist_stars])
@@ -762,17 +778,18 @@ async def get_artists(
             first_char = "#"
         elif sort_name.startswith("THE "):
             first_char = sort_name[4] if len(sort_name) > 4 else "T"
-            
+
         group = first_char.upper()
         if group not in indices:
             indices[group] = {"name": group, "artist": []}
         indices[group]["artist"].append(artist)
-        
+
     # Sort groups alphabetically, ensuring '#' is first or properly sorted
     sorted_groups = []
     for group_name in sorted(indices.keys()):
         # Sort artists inside the group
-        indices[group_name]["artist"].sort(key=lambda a: a.get("name", "").lower())
+        indices[group_name]["artist"].sort(
+            key=lambda a: a.get("name", "").lower())
         sorted_groups.append(indices[group_name])
 
     is_indexes = "getIndexes" in request.url.path

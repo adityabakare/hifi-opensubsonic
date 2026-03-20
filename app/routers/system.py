@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from app.config import settings
 from app.routers.common import common_params
 from app.responses import SubsonicResponse
-from app.auth import create_user, get_user_by_username, get_current_user, authenticate_user
+from app.auth import create_user, get_user_by_username, get_current_user, authenticate_user, verify_password, update_user_password
 from app.models import User
 from app.database import get_session
 from app.limiter import limiter
@@ -20,6 +20,11 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -244,3 +249,29 @@ async def logout_user(response: Response):
 @router.get("/api/me")
 async def get_current_user_info(user: User = Depends(get_current_user)):
     return {"status": "ok", "username": user.username}
+
+
+@router.post("/api/change-password")
+async def change_password(
+    payload: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    if not payload.current_password or not payload.new_password:
+        return {"status": "error", "message": "Current and new passwords are required"}
+
+    if payload.current_password == payload.new_password:
+        return {"status": "error", "message": "New password must be different from current password"}
+
+    if len(payload.new_password) < 8:
+        return {"status": "error", "message": "New password must be at least 8 characters"}
+
+    if not verify_password(payload.current_password, user.password_hash):
+        return {"status": "error", "message": "Current password is incorrect"}
+
+    try:
+        await update_user_password(session, user, payload.new_password)
+    except Exception:
+        return {"status": "error", "message": "Failed to update password"}
+
+    return {"status": "ok", "message": "Password changed successfully"}

@@ -79,6 +79,17 @@ async def create_user(session: AsyncSession, username: str, password: str, email
     await session.refresh(user)
     return user
 
+
+async def update_user_password(session: AsyncSession, user: User, new_password: str) -> User:
+    """Update a user's login password and subsonic token secret atomically."""
+    user.password_hash = get_password_hash(new_password)
+    user.subsonic_token = fernet.encrypt(new_password.encode('utf-8')).decode('utf-8')
+
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
 async def get_current_user(request: Request, session: AsyncSession = Depends(get_session)) -> User:
     """
     FastAPI dependency: extract and validate the current user from the auth_token cookie.

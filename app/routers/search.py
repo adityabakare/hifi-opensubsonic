@@ -54,7 +54,7 @@ async def search3(
     artistOffset = artistOffset_form if artistOffset_form is not None else artistOffset
     
     if not query:
-         return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
+        return SubsonicResponse.error(10, "Required parameter is missing", fmt=f)
     
     try:
         t_res, a_res, al_res = await asyncio.gather(
@@ -73,7 +73,7 @@ async def search3(
 
             for it in items:
                 songs.append(extract_track_metadata(it))
-            
+
         artists = []
         if isinstance(a_res, dict):
             root = a_res.get("data", a_res)
@@ -84,11 +84,11 @@ async def search3(
             for it in items:
                 cover_uuid = it.get("picture")
                 cover_art_id = cover_uuid if cover_uuid else f"ar-{it['id']}"
-                
+
                 artists.append({
                     "id": f"ar-{it['id']}",
                     "name": it.get("name") or "Unknown Artist",
-                    "coverArt": cover_art_id, 
+                    "coverArt": cover_art_id,
                     "isDir": True
                 })
 
@@ -105,17 +105,17 @@ async def search3(
 
                 cover_uuid = it.get("cover")
                 cover_art_id = cover_uuid if cover_uuid else f"al-{it['id']}"
-                
+
                 artist_name = "Unknown Artist"
                 if "artist" in it:
                     artist_name = it.get("artist", {}).get("name")
                 elif "artists" in it and isinstance(it["artists"], list) and len(it["artists"]) > 0:
                     artist_name = it["artists"][0].get("name")
-                
+
                 albums.append({
                     "id": f"al-{it['id']}",
                     "title": it.get("title") or "Unknown Album",
-                    "name": it.get("title") or "Unknown Album", 
+                    "name": it.get("title") or "Unknown Album",
                     "artist": artist_name,
                     "coverArt": cover_art_id,
                     "year": int(it.get("releaseDate")[:4]) if it.get("releaseDate") else None,
@@ -127,9 +127,9 @@ async def search3(
 
         return SubsonicResponse.create({
             key: {
-                "song": songs[songOffset : songOffset + songCount],
-                "artist": artists[artistOffset : artistOffset + artistCount],
-                "album": albums[albumOffset : albumOffset + albumCount]
+                "song": songs[songOffset: songOffset + songCount],
+                "artist": artists[artistOffset: artistOffset + artistCount],
+                "album": albums[albumOffset: albumOffset + albumCount]
             }
         }, fmt=f)
 
