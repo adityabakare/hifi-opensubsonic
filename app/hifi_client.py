@@ -57,8 +57,9 @@ class _CircuitState:
 
 class HifiClient:
     def __init__(self):
-        self.instances: list[str] = []
-        self._load_instances()
+        self.api_instances: list[str] = []
+        self.streaming_instances: list[str] = []
+        self._initialized = False
         self.client = httpx.AsyncClient(
             http2=True,
             limits=httpx.Limits(
@@ -68,14 +69,35 @@ class HifiClient:
             timeout=settings.UPSTREAM_TIMEOUT,
         )
         self._semaphore = asyncio.Semaphore(settings.UPSTREAM_MAX_CONCURRENCY)
-        self._circuits: dict[str, _CircuitState] = {
-            url: _CircuitState() for url in self.instances
-        }
+        self._circuits: dict[str, _CircuitState] = {}
 
-    def _load_instances(self):
-        """Load upstream instances from HIFI_INSTANCES config."""
-        self.instances = list(settings.HIFI_INSTANCES)
-        logger.info(f"Loaded {len(self.instances)} upstream instances from environment.")
+    async def init(self):
+        """Fetch remote instance list from monochrome. Must be called at startup."""
+        try:
+            resp = await self.client.get(settings.MONOCHROME_INSTANCES_URL, timeout=10.0)
+            resp.raise_for_status()
+            data = resp.json()
+
+            # Normalize URLs: strip trailing slashes for consistency
+            self.api_instances = [url.rstrip("/") for url in data.get("api", [])]
+            self.streaming_instances = [url.rstrip("/") for url in data.get("streaming", [])]
+
+            # Initialize circuit breakers for all instances
+            all_urls = set(self.api_instances + self.streaming_instances)
+            for url in all_urls:
+                if url not in self._circuits:
+                    self._circuits[url] = _CircuitState()
+
+            logger.info(
+                "Loaded %d API instances and %d streaming instances from monochrome",
+                len(self.api_instances), len(self.streaming_instances)
+            )
+            self._initialized = True
+
+        except Exception as e:
+            logger.error("Failed to fetch monochrome instances: %s", e)
+            logger.warning("Starting with no upstream instances — all requests will fail until instances are available")
+            self._initialized = True  # Mark as initialized so the app still starts
 
     def _get_circuit(self, base_url: str) -> _CircuitState:
         """Get or create circuit state for an instance."""
@@ -86,103 +108,150 @@ class HifiClient:
     async def close(self):
         await self.client.aclose()
 
-    async def _get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def _request(
+        self,
+        endpoint: str,
+        params: Optional[Dict[str, Any]] = None,
+        instance_type: str = "api",
+    ) -> Dict[str, Any]:
         """
         Execute GET request with:
         - Concurrency limiting (semaphore)
         - Random instance selection with failover
         - Per-instance circuit breaker
+        - Retry with backoff when all instances are circuit-open
         """
+        pool = self.api_instances if instance_type == "api" else self.streaming_instances
+
+        if not pool:
+            raise ConnectionError(f"No {instance_type} instances configured")
+
         async with self._semaphore:
-            candidates = list(self.instances)
-            random.shuffle(candidates)
+            for retry in range(settings.UPSTREAM_MAX_RETRIES + 1):
+                candidates = list(pool)
+                random.shuffle(candidates)
 
-            # Partition into available and open-circuit instances
-            available = []
-            half_open = []
-            for url in candidates:
-                circuit = self._get_circuit(url)
-                if circuit.is_open:
-                    continue  # Skip fully-open circuits
-                elif circuit.is_half_open:
-                    half_open.append(url)  # Allow as last resort
-                else:
-                    available.append(url)
+                # Partition into available and open-circuit instances
+                available = []
+                half_open = []
+                for url in candidates:
+                    circuit = self._get_circuit(url)
+                    if circuit.is_open:
+                        continue  # Skip fully-open circuits
+                    elif circuit.is_half_open:
+                        half_open.append(url)  # Allow as last resort
+                    else:
+                        available.append(url)
 
-            # Try available first, then half-open as probes
-            ordered = available + half_open
+                # Try available first, then half-open as probes
+                ordered = available + half_open
 
-            if not ordered:
-                logger.error("All upstream instances have open circuits")
-                raise ConnectionError("All upstream instances are unavailable")
+                if not ordered:
+                    # All circuits are open — wait and retry
+                    if retry < settings.UPSTREAM_MAX_RETRIES:
+                        logger.warning(
+                            "All %s instances have open circuits, retrying in %.1fs (attempt %d/%d)",
+                            instance_type, settings.UPSTREAM_RETRY_DELAY,
+                            retry + 1, settings.UPSTREAM_MAX_RETRIES,
+                        )
+                        await asyncio.sleep(settings.UPSTREAM_RETRY_DELAY)
+                        continue
+                    else:
+                        logger.error(
+                            "All %s instances still unavailable after %d retries",
+                            instance_type, settings.UPSTREAM_MAX_RETRIES,
+                        )
+                        raise ConnectionError(
+                            f"All {instance_type} instances are unavailable after {settings.UPSTREAM_MAX_RETRIES} retries"
+                        )
 
-            last_error = None
+                last_error = None
 
-            for base_url in ordered:
-                circuit = self._get_circuit(base_url)
-                url = f"{base_url}{endpoint}"
-                try:
-                    resp = await self.client.get(url, params=params)
-                    if resp.status_code >= 500:
+                for base_url in ordered:
+                    circuit = self._get_circuit(base_url)
+                    url = f"{base_url}{endpoint}"
+                    try:
+                        resp = await self.client.get(url, params=params)
+
+                        if resp.status_code >= 500:
+                            circuit.record_failure()
+                            last_error = f"Status {resp.status_code} from {base_url}"
+                            continue
+
+                        if resp.status_code >= 400:
+                            # 4xx: instance is reachable but returned a client error.
+                            # Don't trip the circuit, but try the next instance —
+                            # another instance may have the data.
+                            circuit.record_success()
+                            last_error = f"Status {resp.status_code} from {base_url}"
+                            logger.debug("Got %d from %s for %s, trying next instance", resp.status_code, base_url, endpoint)
+                            continue
+
+                        circuit.record_success()
+                        return resp.json()
+                    except Exception as e:
                         circuit.record_failure()
-                        last_error = f"Status {resp.status_code}"
+                        last_error = e
                         continue
 
-                    resp.raise_for_status()
-                    circuit.record_success()
-                    return resp.json()
-                except httpx.HTTPStatusError as e:
-                    # Do not retry on 4xx client errors — not the instance's fault
-                    circuit.record_success()  # Instance is reachable
-                    raise e
-                except Exception as e:
-                    circuit.record_failure()
-                    last_error = e
-                    continue
+                # All instances in this round failed — retry if we have attempts left
+                if retry < settings.UPSTREAM_MAX_RETRIES:
+                    logger.warning(
+                        "All %s instances failed this round, retrying in %.1fs (attempt %d/%d). Last error: %s",
+                        instance_type, settings.UPSTREAM_RETRY_DELAY,
+                        retry + 1, settings.UPSTREAM_MAX_RETRIES, last_error,
+                    )
+                    await asyncio.sleep(settings.UPSTREAM_RETRY_DELAY)
+                else:
+                    logger.warning("All %s instances failed. Last error: %s", instance_type, last_error)
+                    raise last_error if isinstance(last_error, Exception) else Exception(
+                        str(last_error) if last_error else "No instances available"
+                    )
 
-            logger.warning(f"All upstream instances failed. Last error: {last_error}")
-            raise last_error if isinstance(last_error, Exception) else Exception(str(last_error) if last_error else "No instances available")
+        # Should not be reached, but just in case
+        raise ConnectionError(f"No {instance_type} instances available")
 
     # --- Search (cached, short TTL) ---
 
     async def search_tracks(self, query: str):
         key = _make_key("search_tracks", query)
-        return await cached_call(search_cache, key, lambda: self._get("/search/", params={"s": query}))
+        return await cached_call(search_cache, key, lambda: self._request("/search/", params={"s": query}))
 
     async def search_artists(self, query: str):
         key = _make_key("search_artists", query)
-        return await cached_call(search_cache, key, lambda: self._get("/search/", params={"a": query}))
-    
+        return await cached_call(search_cache, key, lambda: self._request("/search/", params={"a": query}))
+
     async def search_albums(self, query: str):
         key = _make_key("search_albums", query)
-        return await cached_call(search_cache, key, lambda: self._get("/search/", params={"al": query}))
+        return await cached_call(search_cache, key, lambda: self._request("/search/", params={"al": query}))
 
     # --- Metadata (cached, long TTL) ---
 
     async def get_artist(self, artist_id: int):
         key = _make_key("artist", artist_id)
-        return await cached_call(artist_cache, key, lambda: self._get("/artist/", params={"id": artist_id}))
+        return await cached_call(artist_cache, key, lambda: self._request("/artist/", params={"id": artist_id}))
 
     async def get_artist_albums(self, artist_id: int):
         key = _make_key("artist_albums", artist_id)
-        return await cached_call(album_cache, key, lambda: self._get("/artist/", params={"f": artist_id}))
+        return await cached_call(album_cache, key, lambda: self._request("/artist/", params={"f": artist_id}))
 
     async def get_album(self, album_id: int):
         key = _make_key("album", album_id)
-        return await cached_call(album_cache, key, lambda: self._get("/album/", params={"id": album_id}))
+        return await cached_call(album_cache, key, lambda: self._request("/album/", params={"id": album_id}))
 
     async def get_similar_artists(self, artist_id: int):
         key = _make_key("similar_artists", artist_id)
-        return await cached_call(similar_cache, key, lambda: self._get("/artist/similar/", params={"id": artist_id}))
+        return await cached_call(similar_cache, key, lambda: self._request("/artist/similar/", params={"id": artist_id}))
 
     async def get_artist_top_tracks(self, artist_id: int):
         """Get an artist's top tracks via /artist/?f={id} (tracks sorted by popularity)."""
         key = _make_key("artist_top_tracks", artist_id)
-        return await cached_call(artist_cache, key, lambda: self._get("/artist/", params={"f": artist_id}))
+        return await cached_call(artist_cache, key, lambda: self._request("/artist/", params={"f": artist_id}))
 
     async def get_track(self, track_id: int, quality: str = "LOSSLESS"):
-        """Get track streaming info (manifest/url). NOT cached — URLs are time-limited."""
-        return await self._get("/track/", params={"id": track_id, "quality": quality})
+        """Get track streaming info (manifest/url). NOT cached — URLs are time-limited.
+        Uses STREAMING instances."""
+        return await self._request("/track/", params={"id": track_id, "quality": quality}, instance_type="streaming")
 
     async def get_track_info(self, track_id: int):
         """
@@ -190,28 +259,29 @@ class HifiClient:
         Uses /info/ endpoint which returns complete track information.
         """
         key = _make_key("track_info", track_id)
-        return await cached_call(track_cache, key, lambda: self._get("/info/", params={"id": track_id}))
+        return await cached_call(track_cache, key, lambda: self._request("/info/", params={"id": track_id}))
 
     async def get_track_full(self, track_id: int, quality: str = "LOSSLESS"):
         """
         Concurrently fetches both /info/ (full metadata, BPM) and /track/ (accurate Replay Gain).
         Merges the precise gain data from /track/ into the /info/ payload and returns the unified track dictionary.
-        
+
         /info/ results are cached; /track/ is always live (stream URLs are time-limited).
+        /info/ uses API instances; /track/ uses STREAMING instances.
         """
         info_task = self.get_track_info(track_id)
         # Pass quality to get accurate format/gain for the requested stream quality
         track_task = self.get_track(track_id, quality=quality)
-        
+
         info_res, track_res = await asyncio.gather(info_task, track_task, return_exceptions=True)
-        
+
         # If info failed, we can't return a unified payload, return early or raise
         if isinstance(info_res, Exception):
             raise info_res
-        
+
         # Deep copy so cached /info/ data isn't mutated
         merged = copy.deepcopy(info_res)
-        
+
         # If we successfully got track details, inject its specialized gain fields into info["data"]
         if not isinstance(track_res, Exception) and track_res and "data" in track_res:
             td = track_res["data"]
@@ -226,17 +296,17 @@ class HifiClient:
                     md["trackReplayGain"] = td["trackReplayGain"]
                 if "trackPeakAmplitude" in td:
                     md["trackPeakAmplitude"] = td["trackPeakAmplitude"]
-                    
+
         return merged
 
     async def get_lyrics(self, track_id: int):
         """Get lyrics for a track ID."""
         key = _make_key("lyrics", track_id)
-        return await cached_call(lyrics_cache, key, lambda: self._get("/lyrics/", params={"id": track_id}))
+        return await cached_call(lyrics_cache, key, lambda: self._request("/lyrics/", params={"id": track_id}))
 
     async def get_similar_tracks(self, track_id: int):
         """Get similar tracks (recommendations) for a track ID."""
         key = _make_key("similar_tracks", track_id)
-        return await cached_call(similar_cache, key, lambda: self._get("/recommendations/", params={"id": track_id}))
+        return await cached_call(similar_cache, key, lambda: self._request("/recommendations/", params={"id": track_id}))
 
 hifi_client = HifiClient()

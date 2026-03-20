@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import List, Optional
+from typing import Optional
 
 class Settings(BaseSettings):
     API_VERSION: str = "1.16.1"
@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str  # Required — must be set in .env or environment
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 24
-    HIFI_INSTANCES: List[str] = ["https://monochrome-api.samidy.com"]  # Upstream API URLs (JSON array in .env)
+    MONOCHROME_INSTANCES_URL: str = "https://raw.githubusercontent.com/monochrome-music/monochrome/main/public/instances.json"
     LASTFM_API_KEY: Optional[str] = None
     LASTFM_API_SECRET: Optional[str] = None
     EXPLICIT_CONTENT_FILTER: str = "All"  # "All", "Clean", "Explicit"
@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     UPSTREAM_MAX_CONCURRENCY: int = 30        # Max parallel upstream requests
     CIRCUIT_BREAKER_THRESHOLD: int = 5        # Consecutive failures before tripping
     CIRCUIT_BREAKER_RECOVERY: int = 30        # Seconds before retrying a tripped instance
+    UPSTREAM_MAX_RETRIES: int = 3             # Retry rounds when all instances are open
+    UPSTREAM_RETRY_DELAY: float = 2.0         # Seconds between retry rounds
 
     class Config:
         env_file = ".env"

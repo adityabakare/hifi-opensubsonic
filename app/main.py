@@ -32,7 +32,10 @@ async def lifespan(app: FastAPI):
         if not user:
             logger.info("Seeding default admin user...")
             await create_user(session, "admin", "admin", is_admin=True)
-            
+
+    # Fetch upstream instances from monochrome
+    await hifi_client.init()
+
     yield
 
     # Cleanup: close HTTP clients
