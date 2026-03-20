@@ -15,7 +15,7 @@ from app.database import get_session
 from app.hifi_client import hifi_client
 from app.models import Star
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, extract_track_metadata, fetch_artist_albums, resolve_id
+from app.routers.common import common_params, extract_track_metadata, fetch_artist_albums, resolve_id, is_video_album
 
 logger = logging.getLogger(__name__)
 
@@ -530,6 +530,9 @@ async def get_album_list(
             data = await hifi_client.get_album(numeric_id)
             d = data.get("data", {}) if data else {}
             if d:
+                if is_video_album(d):
+                    return None
+
                 cover_uuid = d.get("cover")
                 return {
                     "id": star.item_id,

@@ -306,6 +306,25 @@ def _preference_deduplicator(album_list: list) -> list:
     return deduped
 
 
+def is_video_album(album: dict) -> bool:
+    """Return True when an album is a video release we should hide from audio lists."""
+    if not isinstance(album, dict):
+        return False
+
+    title = str(album.get("title") or "").lower()
+    version = str(album.get("version") or "").lower()
+    album_type = str(album.get("type") or "").upper()
+
+    if "video album" in title or "video album" in version:
+        return True
+
+    # Some upstream payloads flag video-focused releases by type.
+    if album_type in {"VIDEO", "VIDEO_ALBUM"}:
+        return True
+
+    return False
+
+
 async def fetch_artist_albums(artist_id: int, artist_name: str = "") -> list:
     """
     Fetch all albums for an artist using the upstream's direct endpoint.
@@ -324,7 +343,8 @@ async def fetch_artist_albums(artist_id: int, artist_name: str = "") -> list:
         albums_data = res.get("albums", {}) if isinstance(res, dict) else {}
         items = albums_data.get("items", [])
         if items:
-            return _preference_deduplicator(items)
+            audio_items = [alb for alb in items if not is_video_album(alb)]
+            return _preference_deduplicator(audio_items)
     except Exception as e:
         logger.warning("Failed to fetch albums for artist %s, falling back to search: %s", artist_id, e)
 
@@ -342,6 +362,9 @@ async def fetch_artist_albums(artist_id: int, artist_name: str = "") -> list:
 
     matched = []
     for it in items:
+        if is_video_album(it):
+            continue
+
         aid = it.get("artist", {}).get("id")
         aname = it.get("artist", {}).get("name")
 

@@ -8,7 +8,7 @@ from typing import Optional
 from app.config import settings
 from app.hifi_client import hifi_client
 from app.responses import SubsonicResponse
-from app.routers.common import common_params, get_track_format, extract_track_metadata
+from app.routers.common import common_params, get_track_format, extract_track_metadata, is_video_album
 
 router = APIRouter()
 
@@ -100,6 +100,9 @@ async def search3(
                 items = root.get("items", [])
 
             for it in items:
+                if is_video_album(it):
+                    continue
+
                 cover_uuid = it.get("cover")
                 cover_art_id = cover_uuid if cover_uuid else f"al-{it['id']}"
                 
